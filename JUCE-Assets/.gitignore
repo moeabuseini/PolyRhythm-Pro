@@ -1,0 +1,32 @@
+# JUCE Build folders
+Builds/
+
+# Visual Studio
+*.vcxproj*
+*.sln
+*.user
+*.db
+*.opendb
+.vs/
+
+# Compiled object files
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+
+# JUCE Intermediate Builds
+x64/
+Win32/
+Debug/
+Release/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Generated files
+*.autosave
