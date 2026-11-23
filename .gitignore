@@ -1,0 +1,15 @@
+# CMake and IDE output
+/build/
+/out/
+/JUCE/
+CMakeUserPresets.json
+.vs/
+.vscode/ipch/
+*.user
+*.suo
+
+# Local notes and runtime diagnostics
+/docs/ENGINEERING.md
+*.log
+*.dmp
+*.pdb
