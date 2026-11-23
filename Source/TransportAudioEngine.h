@@ -1,48 +1,88 @@
 #pragma once
-
 #include <JuceHeader.h>
-#include <atomic>
-#include <cstdint>
+#include "Instrument.h"
+#include "BeatGrid.h"
 
 class TransportAudioEngine final : public juce::AudioSource
 {
-public:
-    void prepareToPlay(int samplesPerBlockExpected, double sampleRate) override;
-    void releaseResources() override;
-    void getNextAudioBlock(const juce::AudioSourceChannelInfo& bufferToFill) override;
-
-    void setPattern(int voiceA, int voiceB, double bpm) noexcept;
-    void setPlaying(bool shouldPlay) noexcept;
-    void reset() noexcept;
-    void setMasterVolume(float volume) noexcept;
-
-    bool isPlaying() const noexcept { return playing.load(std::memory_order_relaxed); }
-    bool isAudioReady() const noexcept { return audioReady.load(std::memory_order_relaxed); }
-    double elapsedSeconds() const noexcept
+  public:
+    TransportAudioEngine();
+    void prepareToPlay(int, double) override;
+    void releaseResources() override { audioReady = false; }
+    void getNextAudioBlock(const juce::AudioSourceChannelInfo &) override;
+    void setPattern(int a, int b, double bpm) noexcept;
+    void setPlaying(bool run) noexcept { playing = run; }
+    void reset() noexcept { seek(0); }
+    void seek(double target) noexcept { desiredPosition = std::max(0., target); }
+    double playhead() const noexcept
     {
-        return resetRequested.load(std::memory_order_relaxed) ? 0.0 : elapsed.load(std::memory_order_relaxed);
+        double pending = desiredPosition.load();
+        return pending >= 0 ? pending : position.load();
     }
-    double cyclePhase() const noexcept;
-    int cycleCount() const noexcept;
+    studio::BeatGrid grid() const noexcept;
+    void setMasterVolume(float value) noexcept { masterVolume = value; }
+    bool isPlaying() const noexcept { return playing.load(); }
+    struct DisplayTime { double seconds, cycles; };
+    DisplayTime displayTime() const noexcept;
+    bool hasPendingSeek() const noexcept { return desiredPosition.load() >= 0; }
+    bool isAudioReady() const noexcept { return audioReady.load(); }
+    double elapsedSeconds() const noexcept { return elapsed.load(); }
+    double cyclePhase() const noexcept
+    {
+        auto p = position.load();
+        return p - std::floor(p);
+    }
+    int cycleCount() const noexcept { return static_cast<int>(position.load()); }
+    bool popHit(studio::Hit &);
+    std::array<studio::Strip, studio::layerCount> strips;
+    std::atomic<int> seed{1709}, nodesPerLayer{8}, reunionPasses{8};
+    std::atomic<int> masterTranspose{0};
+    std::atomic<int> chordShape{0}, chordTouch{0};
 
-private:
-    std::atomic<int> countA { 3 };
-    std::atomic<int> countB { 2 };
-    std::atomic<double> tempo { 96.0 };
-    std::atomic<float> masterVolume { 0.65f };
-    std::atomic<bool> playing { false };
-    std::atomic<bool> audioReady { false };
-    std::atomic<double> elapsed { 0.0 };
-    std::atomic<int> publishedCycle { 0 };
-    std::atomic<bool> resetRequested { false };
-
-    double sampleRate = 44100.0;
-    double phaseA = 0.0;
-    double phaseB = 0.0;
-    float envelopeA = 0.0f;
-    float envelopeB = 0.0f;
-    std::int64_t lastEventA = -1;
-    std::int64_t lastEventB = -1;
-    double lastTime = 0.0;
-    bool wasPlaying = false;
+  private:
+    struct Note
+    {
+        float phase{}, stringPhase{}, step{}, amp{}, fall{}, attack{}, rise{}, brightness{};
+        int sound{}, delaySamples{};
+    };
+    struct Grain
+    {
+        float offset{}, stride{}, phase{}, increment{};
+    };
+    struct Channel
+    {
+        std::array<Note, studio::BeatGrid::maxBodies> notes{};
+        // Reinforcement has its own voices: it must not steal any of the
+        // sixteen node attacks or disappear when a roll starts.
+        std::array<Note, 4> resonance{};
+        std::array<Grain, 12> grains{};
+        juce::Reverb verb;
+        juce::dsp::Chorus<float> ensemble;
+        std::vector<float> history;
+        int write{}, nextNote{}, nextGrain{}, countdown{};
+        unsigned grainNumber{};
+        float low{}, high{}, filtered{}, modPhase{};
+        int64_t lastStep = -1;
+    };
+    void trigger(int layer, int64_t step, double eventPosition, double eventTime, int instrument,
+                 const studio::Values &, const studio::BeatGrid &, int globalShift, bool onBoundary);
+    void soundReunion(Channel &, int layer, int degree, int transpose);
+    float synthNote(Note &);
+    float synth(Channel &);
+    float wave(float phase) const noexcept;
+    float tap(const Channel &, float offset) const noexcept;
+    void clear();
+    std::array<Channel, studio::layerCount> channels;
+    std::array<float, 4097> sine{};
+    juce::AudioBuffer<float> scratch;
+    juce::AbstractFifo fifo{512};
+    std::array<studio::Hit, 512> hits{};
+    std::atomic<int> countA{3}, countB{2};
+    std::atomic<double> tempo{96}, elapsed{0}, position{0};
+    std::atomic<float> masterVolume{0.65f};
+    std::atomic<bool> playing{false}, audioReady{false};
+    std::atomic<double> desiredPosition{-1};
+    std::atomic<unsigned> stampVersion{};
+    std::atomic<double> stampWall{}, stampSeconds{}, stampCycles{}, stampDuration{}, stampRate{};
+    double sampleRate = 44100, clockTime = 0, cycles = 0;
 };

@@ -7,3 +7,9 @@ CMakeUserPresets.json
 .vscode/ipch/
 *.user
 *.suo
+
+# Local notes and runtime diagnostics
+/docs/ENGINEERING.md
+*.log
+*.dmp
+*.pdb
