@@ -1,7 +1,18 @@
 #include "MainComponent.h"
+#include "VideoScores.h"
 
 namespace
 {
+double ease(double t)
+{
+    t=std::clamp(t,0.,1.);
+    return t*t*t*(10+t*(-15+6*t));
+}
+bool fluid(const juce::String& key)
+{
+    return key=="spread" || key=="offset" || key=="pointCoverage" || key=="orbitScale" || key=="bpm"
+        || key.endsWith("_line") || key.endsWith("_point") || key.endsWith("_distance");
+}
 StudioState newSequence(juce::String name,StudioState patch)
 {
     StudioState s("Sequence"); s.setProperty("name",name,nullptr);
@@ -97,6 +108,10 @@ void MainComponent::populateVideos()
         cue(1260,180,"layer0_dial11",18);
         sequences.push_back(sequence);
     }
+    for(auto* score:{VideoScores::FireflyFloat_xml,VideoScores::InfinitySpiral_xml}){
+        if(auto xml=juce::parseXML(juce::String::fromUTF8(score)))
+            sequences.push_back(StudioState::fromXml(*xml));
+    }
     for(auto f:userSettings.getChildFile("Sequences").findChildFiles(juce::File::findFiles,false,"*.xml")){
         auto s=readStudioFile(f);
         if(s.hasType("Sequence") && s.getChild(0).hasType("Patch")){
@@ -109,14 +124,22 @@ void MainComponent::populateVideos()
 
 void MainComponent::openVideo()
 {
+    if(gesture.isValid()){
+        sampleGesture();
+        if(gesture.isValid())finishGesture();
+        if(video && video->isVisible())return;
+    }
     if(!video){
         video=std::make_unique<VideoEditor>(catalogue);addChildComponent(*video);
         populateVideos();
         video->library.onChange=[this]{int i=video->library.getSelectedId()-1;if(juce::isPositiveAndBelow(i,int(sequences.size())))video->load(sequences[i]);};
         video->library.setSelectedId(1,juce::sendNotificationSync);
+        video->importPreset.onClick=[this]{transferPreset(false,true);};
+        video->exportPreset.onClick=[this]{transferPreset(true,true);};
         video->create.onClick=[this]{
             video->library.setSelectedId(0,juce::dontSendNotification);
             video->load(newSequence("Untitled sequence",captureStudio(catalogue)));
+            captured("Opening settings captured","In the new sequence, not yet on disk. Choose Save as preset to keep it.");
             video->setEditing(true);
         };
         auto saveSequence=[this](bool copy){
@@ -138,11 +161,13 @@ void MainComponent::openVideo()
             populateVideos();
             for(size_t i=0;i<sequences.size();++i)if(sequences[i]["file"].toString()==filename)
                 video->library.setSelectedId(int(i)+1,juce::sendNotificationSync);
+            saved("Sequence saved: "+s["name"].toString(),userSettings.getChildFile("Sequences").getChildFile(filename));
             video->message.setText("Sequence saved.",juce::dontSendNotification);
         };
         video->opening.onClick=[this]{
             video->sequence.removeChild(0,nullptr);
             video->sequence.addChild(captureStudio(catalogue),0,nullptr);
+            captured("Opening settings captured","In the current sequence. Choose Save or Save as preset to write it to disk.");
             video->message.setText("Opening settings captured. Timeline cues still apply.",juce::dontSendNotification);
         };
         video->save.onClick=[saveSequence]{saveSequence(false);};
@@ -190,6 +215,9 @@ void MainComponent::previewVideo()
             timeline.push_back({k,f,n,from,to});prior.setProperty(s.id,to,nullptr);
             videoEnd=std::max(videoEnd,(f+std::max(75,n))/30.0);
             auto line=cue["caption"].toString();
+            if(to<from && (s.id=="transpose" || s.id.endsWith("_dial1")) && line.isEmpty())
+                line=s.id=="transpose" ? "Listen as the whole piece settles into a lower register."
+                                       : "Listen as the "+s.section.toLowerCase()+" drops in pitch.";
             if(!cue.hasProperty("caption")){
                 if(s.choices.isEmpty())
                     line="Notice how "+s.label.toLowerCase()+" changes.";
@@ -207,13 +235,52 @@ void MainComponent::previewVideo()
     if(timeline.empty())return;
     if(!narration.empty()) videoEnd=std::max(videoEnd,narration.back().end);
     beforeVideo=captureStudio(catalogue);beforePosition=engine.playhead();wasPlaying=engine.isPlaying();
-    {
+    videoOpening=start;videoPeak=prior;
+    loopVideo=bool(seq["loop"]);returnToOpening=bool(seq["returnToOpening"]);
+    openingPhase=juce::jlimit(0.,1.e8,double(seq.getProperty("openingPhase",0.)));
+    if(returnToOpening && videoReunion){
+        // Budget the musical distance travelled by the build, then place the opening
+        // that far before a real final-grid reunion. No seek during the visible shot.
+        double distance=0;
+        for(double sec=0;sec<videoEnd+6;sec+=0.5){
+            double bpm=start["bpm"],bass=start["bass"];
+            for(const auto& c:timeline){
+                const auto& key=catalogue[c.index].id;
+                if((key!="bpm" && key!="bass") || c.frame>(sec+0.25)*30) continue;
+                const double t=c.length?((sec+0.25)*30-c.frame)/c.length:1.;
+                const double v=c.from+(c.to-c.from)*ease(t);
+                if(key=="bpm")bpm=v;else bass=std::round(v);
+            }
+            distance+=0.5*bpm/(60*std::max(1.,bass));
+        }
         const juce::ScopedLock lock(audioDeviceManager.getAudioCallbackLock());
-        engine.setPlaying(false);recall(start,true);engine.setPlaying(true);
+        engine.setPlaying(false);
+        recall(prior,false);
+        openingPhase=std::max(0.,engine.grid().nextMeeting(distance,true)-distance);
     }
+    restartVideoPass();
     scene.cleanStage=true;
     filming=true;video->setVisible(false);scene.toFront(false);scene.setWantsKeyboardFocus(true);
     scene.enterModalState(true,nullptr,false);resized();
+}
+
+void MainComponent::restartVideoPass()
+{
+    const juce::ScopedLock lock(audioDeviceManager.getAudioCallbackLock());
+    engine.setPlaying(false);recall(videoOpening,true);
+    if(openingPhase>0)engine.seek(openingPhase);
+    videoClockOffset=openingPhase*60.*pattern.voiceB/pattern.bpm;
+    nextVideoCue=0;fadingCues.clear();
+    reunionEnd=returnStart=-1;
+    scene.captions.clear();
+    scene.videoOpacity=(returnToOpening || loopVideo)?0.f:1.f;
+    engine.setMasterVolume(float(volumeSlider.getValue())*scene.videoOpacity);
+    engine.setPlaying(true);
+}
+
+void MainComponent::completeVideoPass()
+{
+    if(loopVideo)restartVideoPass();else finishVideo();
 }
 
 void MainComponent::updateVideo(double elapsed,bool reunion)
@@ -221,15 +288,28 @@ void MainComponent::updateVideo(double elapsed,bool reunion)
     // The transport's elapsed clock freezes on pause and doesn't jump as BPM changes.
     if(engine.hasPendingSeek())return;
     const double frame=elapsed*30;
+    const int previousTarget=targetBox.getSelectedId();
+    bool explicitMotion=false;
     scene.captions.clear();
-    for(auto& c:timeline){
-        const double age=frame-c.frame;if(age<0)continue;
-        // A later cue for this same control supersedes the earlier one.
-        const auto& s=catalogue[c.index];
-        const double t=c.length?std::min(1.,age/c.length):1.;
-        const double v=s.snap(c.from+(c.to-c.from)*t*t*(3-2*t));
-        if(!c.complete && s.read()!=v)s.write(v);
-        c.complete=t>=1.;
+    // A recorded knob move can create hundreds of targets. Consume each due
+    // cue once and revisit only transitions that are still in flight.
+    auto applyCue=[&](size_t index){
+        const auto& cue=timeline[index];
+        const auto& setting=catalogue[cue.index];
+        const double t=cue.length?std::clamp((frame-cue.frame)/cue.length,0.,1.):1.;
+        const double target=cue.from+(cue.to-cue.from)*ease(t);
+        const double value=fluid(setting.id)?target:setting.snap(target);
+        if(setting.id=="travel")explicitMotion=true;
+        if(setting.read()!=value)setting.write(value);
+        return t>=1.;
+    };
+    fadingCues.erase(std::remove_if(fadingCues.begin(),fadingCues.end(),applyCue),fadingCues.end());
+    while(nextVideoCue<timeline.size() && timeline[nextVideoCue].frame<=frame){
+        const size_t index=nextVideoCue++;
+        fadingCues.erase(std::remove_if(fadingCues.begin(),fadingCues.end(),[&](size_t prior){
+            return timeline[prior].index==timeline[index].index;
+        }),fadingCues.end());
+        if(!applyCue(index))fadingCues.push_back(index);
     }
     for(const auto& line:narration){
         if(elapsed<line.start) break;
@@ -238,19 +318,56 @@ void MainComponent::updateVideo(double elapsed,bool reunion)
         scene.captions.emplace_back(line.text,float(t*t*(3-2*t)));
         break;
     }
+    if(elapsed>=videoEnd && returnStart<0){
+        const auto grid=engine.grid();
+        const auto lanes=std::count_if(grid.probability.begin(),grid.probability.end(),[](float p){return p>0;});
+        const bool waiting=videoReunion && lanes*grid.bodies>=2;
+        if(!waiting || reunion){
+            if(reunionEnd<0)reunionEnd=elapsed+(waiting?(returnToOpening?5.:3.5):0.);
+        }
+        if(reunionEnd>=0 && elapsed>=reunionEnd){
+            if(!returnToOpening && !loopVideo){completeVideoPass();return;}
+            returnStart=elapsed;
+        }
+    }
+    float opacity=(loopVideo || returnToOpening)?float(ease(elapsed/2.5)):1.f;
+    if(returnStart>=0){
+        const double age=elapsed-returnStart, duration=returnToOpening?17.:2.5;
+        if(returnToOpening){
+            const double t=ease(age/(duration-2));
+            explicitMotion=videoOpening.hasProperty("travel");
+            for(const auto& control:catalogue){
+                if(!videoPeak.hasProperty(control.id) || !videoOpening.hasProperty(control.id))continue;
+                const double from=videoPeak[control.id],to=videoOpening[control.id];
+                if(from==to)continue;
+                const double ramp=from+(to-from)*t;
+                // Keep the sounding harmony and grid intact while the voices recede.
+                // Restore the opening register and count at the silent loop seam.
+                const bool musicalSwitch=control.id=="nodes" || control.id=="transpose" || control.id.endsWith("_dial1");
+                const double value=musicalSwitch?(age>=duration-0.1?to:from):!control.choices.isEmpty()?(t<1?from:to):fluid(control.id)?ramp:control.snap(ramp);
+                if(control.read()!=value) control.write(value);
+            }
+            if(explicitMotion && t>=1.0)
+                scene.equalSpeed=static_cast<int>(videoOpening["travel"])!=0;
+            auto question=video->sequence["returnCaption"].toString();
+            if(question.isNotEmpty() && age<13)
+                scene.captions.emplace_back(question,float(ease(age/2)*ease((13-age)/2)));
+        }
+        opacity=float(ease((duration-age)/(returnToOpening?4.:duration)));
+        if(age>=duration){completeVideoPass();return;}
+    }
+    scene.videoOpacity=opacity;
+    engine.setMasterVolume(float(volumeSlider.getValue())*opacity);
+    for(int l=0;l<studio::layerCount;++l) scene.captionVoices[l]=engine.strips[l].sound.load();
     engine.setPattern(pattern.voiceA,pattern.voiceB,pattern.bpm);scene.setPattern(pattern);
     if(environmentBox.getSelectedId()-1!=scene.activeEnvironment())scene.setEnvironment(environmentBox.getSelectedId()-1);
-    scene.setPointTarget(targetBox.getSelectedId()==2);
-    if(elapsed<videoEnd)return;
-    auto grid=engine.grid();int lanes=0;for(auto probability:grid.probability)if(probability>0)++lanes;
-    if(!videoReunion || lanes*grid.bodies<2){finishVideo();return;}
-    if(reunion && reunionEnd<0)reunionEnd=elapsed+3.5;
-    if(reunionEnd>=0 && elapsed>=reunionEnd)finishVideo();
+    if(previousTarget!=targetBox.getSelectedId() && !explicitMotion) scene.selectFormation(targetBox.getSelectedId()-1);
+    else scene.setFormation(targetBox.getSelectedId()-1);
 }
 
 void MainComponent::finishVideo()
 {
-    scene.cleanStage=false;
+    scene.cleanStage=false;scene.videoOpacity=1;
     filming=false;scene.exitModalState(0);scene.captions.clear();
     {
         const juce::ScopedLock lock(audioDeviceManager.getAudioCallbackLock());

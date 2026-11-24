@@ -30,6 +30,82 @@ TransportAudioEngine::TransportAudioEngine()
     strips[3].values[chorus] = 45;
     strips[3].values[cloud] = 30;
 }
+void TransportAudioEngine::remember(double seconds,double duration,int layer,int midi,float strength)
+{
+    journal[journalWrite]={seconds,duration,layer,midi,strength};
+    journalWrite=(journalWrite+1)%journal.size();
+    journalCount=std::min(journal.size(),journalCount+1);
+}
+int TransportAudioEngine::harmonicPitch(int midi,int layer,double pos,bool tonic) const
+{
+    if(!roadmap && !tonic)return midi;
+    const int slot=tonic?0:int(pos/2)%4;
+    const int root=roadmap?chordRoots[slot].load():2;
+    constexpr int tones[][5]={{0,4,7,4,7},{0,3,7,10,2},{0,4,7,11,7},{0,4,7,10,7},{0,4,7,2,7}};
+    const int kind=roadmap?chordKinds[slot].load():1;
+    for(int distance=0;distance<=6;++distance)for(int sign:{1,-1}){
+        int candidate=midi+distance*sign;
+        const int pc=(candidate-root+144)%12;
+        if(layer==1 ? pc==0 : std::find(std::begin(tones[kind]),std::end(tones[kind]),pc)!=std::end(tones[kind]))return candidate;
+    }
+    return midi;
+}
+int TransportAudioEngine::pitchAt(const BeatGrid& score,int layer,int64_t step,int body,double harmonyPosition,
+                                   bool tonic,int stackIndex,int companion) const
+{
+    const int seedValue=score.laneSeed(layer,step);
+    const auto source=score.sourceStep(layer,step);
+    const auto& strip=strips[layer];
+    const int mode=strip.pitchMode, shape=chordShape;
+    const int copies=std::clamp(strip.nodesPerPitch.load(),1,score.bodies);
+    const int transpose=int(strip.values[pitch]+12*strip.values[octave]), globalShift=masterTranspose;
+    const bool tutti=step%score.phraseLength()==0;
+    constexpr int registers[]{62, 38, 50, 62, 62};
+    constexpr int motif[]{0, 2, 4, 6, 4, 2, 1, 4};
+    const int variant = static_cast<int>(mix(score.key(layer,step) + 1) % 3);
+    int degree = roots[(static_cast<int>(harmonyPosition) / 2 + seedValue % 4) % 4];
+    if (layer == 0)
+        degree += motif[mix(static_cast<unsigned>(step % (5 + seedValue % 4)) + seedValue) % 8] +
+                  (variant == 2 ? 2 : 0);
+    if (layer == 1 && source % 4 == 3)
+        degree += 4;
+    if (layer == 3)
+        degree += 4 + variant * 2;
+    const int layerPitch = mode != ensemble
+        ? nodePitch(layer, body, score.bodies, copies, mode, seedValue, transpose, shape, companion)
+        : juce::jlimit(
+        21, 105,
+        registers[layer] + scaleInterval(degree + (tutti ? 2 * (stackIndex % (layer == 1 ? 2 : 4)) : 2 * stackIndex)) +
+            transpose);
+    return harmonicPitch(layerPitch,layer,harmonyPosition,tonic) + globalShift;
+}
+
+int TransportAudioEngine::nextNodePitch(int layer,int body,double pos) const
+{
+    const auto score=grid();
+    if(score.probability[layer]<=0)return 60;
+    const auto step=score.flightWindow(int64_t(std::max(0.,pos)*score.divisions[layer]*0.5),layer,body).after;
+    const double positionInScore=2.*score.sourceStep(layer,step)/score.divisions[layer];
+    return pitchAt(score,layer,step,body,positionInScore,resolveCue && score.isFullReunion(layer,step),
+                   step%score.phraseLength()==0?body:0,0);
+}
+
+void TransportAudioEngine::copySetupTo(TransportAudioEngine& dst) const
+{
+    dst.setPattern(countA,countB,tempo);dst.masterVolume=masterVolume.load();
+    dst.seed=seed.load();dst.nodesPerLayer=nodesPerLayer.load();dst.reunionPasses=reunionPasses.load();
+    dst.chordShape=chordShape.load();dst.chordTouch=chordTouch.load();dst.masterTranspose=masterTranspose.load();
+    dst.bassSeed=bassSeed.load();dst.bassStart=bassStart.load();dst.melodyBefore=melodyBefore.load();
+    dst.melodyAfter=melodyAfter.load();dst.melodySwitch=melodySwitch.load();
+    dst.roadmap=roadmap.load();dst.resolveCue=resolveCue.load();dst.spaceCue=spaceCue.load();
+    for(int i=0;i<4;++i){dst.chordRoots[i]=chordRoots[i].load();dst.chordKinds[i]=chordKinds[i].load();}
+    for(int l=0;l<layerCount;++l){
+        auto& d=dst.strips[l];const auto& s=strips[l];
+        d.sound=s.sound.load();d.enabled=s.enabled.load();d.pitchMode=s.pitchMode.load();d.nodesPerPitch=s.nodesPerPitch.load();
+        for(int i=0;i<parameterCount;++i)d.values[i]=s.values[i].load();
+    }
+}
+void TransportAudioEngine::audition(int layer,int midi){auditionRequest=layer*128+juce::jlimit(0,127,midi);}
 float TransportAudioEngine::wave(float phase) const noexcept
 {
     const float index = (phase - std::floor(phase)) * 4096.0f;
@@ -46,6 +122,8 @@ BeatGrid TransportAudioEngine::grid() const noexcept
 {
     BeatGrid result;
     result.seed = seed.load();
+    result.bassSeed=bassSeed;result.bassStart=bassStart;result.melodyBefore=melodyBefore;
+    result.melodyAfter=melodyAfter;result.melodySwitch=melodySwitch;
     result.bodies = std::clamp(nodesPerLayer.load(), 1, BeatGrid::maxBodies);
     result.passesPerReunion = std::clamp(reunionPasses.load(), 2, 16);
     result.divisions = {2 * countA.load(), 2 * countB.load(), 2, 1, 4};
@@ -60,7 +138,7 @@ BeatGrid TransportAudioEngine::grid() const noexcept
 }
 void TransportAudioEngine::clear()
 {
-    stampDuration=0;
+    journalOrigin=0;outputPower=0;stampDuration=0; journalWrite=journalCount=0;lastMeeting=previousMeeting=spaceUntil=-1;previewNote={};
     for (auto &c : channels)
     {
         c.notes = {};
@@ -71,6 +149,7 @@ void TransportAudioEngine::clear()
         std::fill(c.history.begin(), c.history.end(), 0.f);
         c.write = c.nextNote = c.nextGrain = c.countdown = 0;
         c.grainNumber = 0;
+        c.tapFrom=c.tapTo=c.mixGain=0; c.tapBlend=1.f;
         c.low = c.high = c.filtered = c.modPhase = 0;
         c.lastStep = -1;
     }
@@ -104,32 +183,26 @@ void TransportAudioEngine::trigger(int layer, int64_t step, double eventPosition
                                    bool onBoundary)
 {
     auto &c = channels[layer];
-    const auto seedValue = score.seed;
+    const auto seedValue = score.laneSeed(layer,step);
     const auto key = score.key(layer, step);
     const auto mask = score.attackMask(layer, step);
     if (mask == 0)
         return;
-    const int root = roots[(static_cast<int>(eventPosition) / 2 + seedValue % 4) % 4];
-    constexpr int registers[]{62, 38, 50, 62, 62};
-    constexpr int motif[]{0, 2, 4, 6, 4, 2, 1, 4};
-    const int variant = static_cast<int>(mix(key + 1) % 3);
-    int degree = root;
-    if (layer == 0)
-        degree += motif[mix(static_cast<unsigned>(step % (5 + seedValue % 4)) + seedValue) % 8] +
-                  (variant == 2 ? 2 : 0);
-    if (layer == 1 && step % 4 == 3)
-        degree += 4;
-    if (layer == 3)
-        degree += 4 + variant * 2;
+    const auto source=score.sourceStep(layer,step);
+    const double harmonyPosition=(layer==1 && score.bassSeed>=0) ? 2.*source/score.divisions[layer] : eventPosition;
+    const int root = roots[(static_cast<int>(harmonyPosition) / 2 + seedValue % 4) % 4];
     const float strength = (0.77f + 0.22f * unit(key + 2)) * score.accent(layer, step);
     const bool tutti = step % score.phraseLength() == 0;
     const int mode = strips[layer].pitchMode.load();
-    const int copies = std::clamp(strips[layer].nodesPerPitch.load(), 1, score.bodies);
+
     const int transpose = static_cast<int>(v[pitch] + 12 * v[octave]);
     const bool reunion = onBoundary && score.isFullReunion(layer, step);
+    if(reunion && eventTime!=lastMeeting){previousMeeting=lastMeeting;lastMeeting=eventTime;}
+    const bool tonic=reunion && resolveCue.load();
+    if(reunion && spaceCue)spaceUntil=eventTime+120./tempo.load();
     if (reunion)
-        soundReunion(c, layer, mode == ensemble ? root : nodeRoot(seedValue), transpose + globalShift);
-    const int shape = chordShape.load();
+        soundReunion(c, layer, mode == ensemble ? root : nodeRoot(seedValue), transpose + globalShift,harmonyPosition,eventTime,tonic);
+
     const int touch = chordTouch.load();
     const bool voiced = layer == 2 && mode != ensemble && touch != single && !tutti && !reunion;
     const bool stackedChord = mode == ensemble && layer == 2;
@@ -138,14 +211,8 @@ void TransportAudioEngine::trigger(int layer, int64_t step, double eventPosition
                                      : tutti ? 0.36f / score.bodies : notes > 1 ? 0.10f : 0.23f;
     for (int n = 0; n < notes; ++n)
     {
-        const int body = tutti ? n : score.soloBody(step);
-        const int layerPitch = mode != ensemble
-            ? nodePitch(layer, body, score.bodies, copies, mode, seedValue, transpose, shape, voiced ? n : 0)
-            : juce::jlimit(
-            21, 105,
-            registers[layer] + scaleInterval(degree + (tutti ? 2 * (n % (layer == 1 ? 2 : 4)) : 2 * n)) +
-                transpose);
-        const int midi = layerPitch + globalShift;
+        const int body = tutti ? n : score.soloBody(source);
+        const int midi=pitchAt(score,layer,step,body,harmonyPosition,tonic,n,voiced?n:0);
         auto &note = c.notes[c.nextNote];
         c.nextNote = (c.nextNote + 1) % static_cast<int>(c.notes.size());
         note = {};
@@ -163,6 +230,7 @@ void TransportAudioEngine::trigger(int layer, int64_t step, double eventPosition
                                   0.018f, 0.008f, 0.003f, 0.007f, 0.055f, 0.047f, 0.009f, 0.14f};
         note.rise = static_cast<float>(1 / (attacks[instrument] * sampleRate));
         note.brightness = 1;
+        remember(eventTime+note.delaySamples/sampleRate,v[decay],layer,midi,strength);
         // Companion tones colour the node; they aren't additional crossings.
         if (voiced && n != 0) continue;
         auto write = fifo.write(1);
@@ -172,7 +240,7 @@ void TransportAudioEngine::trigger(int layer, int64_t step, double eventPosition
                                        strength,  body, reunion && n == 0};
     }
 }
-void TransportAudioEngine::soundReunion(Channel &c, int layer, int degree, int transpose)
+void TransportAudioEngine::soundReunion(Channel &c, int layer, int degree, int transpose,double positionInScore,double seconds,bool tonic)
 {
     constexpr int registers[]{62, 38, 50, 74, 62};
     const double beat = std::clamp(60.0 / tempo.load(), 0.32, 0.85);
@@ -185,13 +253,16 @@ void TransportAudioEngine::soundReunion(Channel &c, int layer, int degree, int t
     {
         auto &n = c.resonance[i];
         n = {};
-        const int midi = juce::jlimit(16, 120, registers[layer] + scaleInterval(degree + degrees[i]) + transpose);
+        const int globalShift=masterTranspose.load();
+        const int written=registers[layer]+scaleInterval(degree+degrees[i])+transpose-globalShift;
+        const int midi=juce::jlimit(16,120,harmonicPitch(written,layer,positionInScore,tonic)+globalShift);
         n.step = static_cast<float>(440 * std::exp2((midi - 69) / 12.) / sampleRate);
         n.amp = levels[i];
         n.fall = static_cast<float>(std::exp(-3.0 / (sampleRate * lengths[i])));
         n.rise = static_cast<float>(1.0 / (sampleRate * (i == 0 ? 0.010 : 0.030)));
         n.sound = i == 0 ? 6 : 10;
         if (i == 3) n.delaySamples = juce::roundToInt(0.52 * beat * sampleRate);
+        remember(seconds+n.delaySamples/sampleRate,lengths[i],layer,midi,levels[i]);
     }
 }
 float TransportAudioEngine::synthNote(Note &n)
@@ -288,12 +359,23 @@ void TransportAudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo 
         cycles = target;
         clockTime = target * 60. * countB.load() / tempo.load();
         position = cycles;
-        elapsed = clockTime;
+        journalOrigin=clockTime;elapsed=clockTime;
         for (int i = 0; i < layerCount; ++i)
             channels[i].lastStep =
                 static_cast<int64_t>(std::ceil((target - 1.e-9) * score.divisions[i] * 0.5)) - 1;
     }
-    if (!playing || !audioReady)
+    if(!audioReady)return;
+    const int request=auditionRequest.exchange(-1);
+    if(request>=0){
+        previewNote={};previewNote.sound=strips[request/128].sound;previewNote.amp=0.22f;
+        previewNote.step=float(440*std::exp2((request%128-69)/12.)/sampleRate);
+        previewNote.rise=float(1/(0.01*sampleRate));previewNote.fall=float(std::exp(-5./sampleRate));previewNote.brightness=1;
+    }
+    if(previewNote.amp>=0.00002f)for(int i=0;i<out.numSamples;++i){
+        float value=synthNote(previewNote)*masterVolume.load();
+        for(int ch=0;ch<out.buffer->getNumChannels();++ch)out.buffer->setSample(ch,out.startSample+i,value);
+    }
+    if (!playing)
         return;
     const double bpm = tempo.load(), cycleInc = bpm / (60 * countB.load() * sampleRate);
 
@@ -305,6 +387,8 @@ void TransportAudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo 
     double echoSeconds = 45.0 / bpm;
     while (echoSeconds > 2.4)
         echoSeconds *= 0.5;
+    const float echoOffset=float(sampleRate*echoSeconds);
+    const float echoBlendStep=float(1./(0.035*sampleRate));
     const auto pole = [this](float hz)
     { return static_cast<float>(1 - std::exp(-juce::MathConstants<double>::twoPi * hz / sampleRate)); };
     const float bassPole = pole(280), highPole = pole(3200);
@@ -331,9 +415,15 @@ void TransportAudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo 
             rv.roomSize = v[room] * 0.01f;
             rv.wetLevel = v[wet] * 0.007f;
             rv.dryLevel = 0.5f;
-            c.verb.setParameters(rv);
+
             auto *left = scratch.getWritePointer(0);
             auto *right = scratch.getWritePointer(1);
+            if(c.tapTo==0) c.tapFrom=c.tapTo=echoOffset;
+            // Crossfade two stationary taps: moving one read head bends pitch,
+            // and jumping straight to a new sample clicks in the feedback loop.
+            if(c.tapBlend>=1 && std::abs(c.tapTo-echoOffset)>0.5f){
+                c.tapFrom=c.tapTo;c.tapTo=echoOffset;c.tapBlend=0;
+            }
             for (int i = 0; i < len; ++i)
             {
                 const double now = cycles + i * cycleInc;
@@ -342,7 +432,7 @@ void TransportAudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo 
                 {
                     const double eventTime = startTime + i / sampleRate;
                     const bool onBoundary = now - step / eventsPerCycle <= cycleInc + 1.e-9;
-                    trigger(l, step, now + 1.e-9, eventTime, patch, v, score, globalShift, onBoundary);
+                    if(!suppressAttacks)trigger(l, step, now + 1.e-9, eventTime, patch, v, score, globalShift, onBoundary);
                     c.lastStep = step;
                 }
                 const float dry = synth(c);
@@ -350,7 +440,13 @@ void TransportAudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo 
                 c.low += bassPole * (c.filtered - c.low);
                 c.high += highPole * (c.filtered - c.high);
                 const float input = c.filtered + lo * c.low + hi * (c.filtered - c.high);
-                const float echo = tap(c, static_cast<float>(sampleRate * echoSeconds));
+                float echo = tap(c,c.tapTo);
+                if(c.tapBlend<1){
+                    const float previous=tap(c,c.tapFrom);
+                    const float blend=c.tapBlend*c.tapBlend*(3-2*c.tapBlend);
+                    echo=previous+(echo-previous)*blend;
+                    c.tapBlend=std::min(1.f,c.tapBlend+echoBlendStep);
+                }
                 float mist = 0;
                 if (v[cloud] > 0)
                 {
@@ -386,11 +482,18 @@ void TransportAudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo 
             }
             auto audio = juce::dsp::AudioBlock<float>(scratch).getSubBlock(0, static_cast<size_t>(len));
             c.ensemble.process(juce::dsp::ProcessContextReplacing<float>(audio));
+            if(startTime<spaceUntil)rv.wetLevel=std::max(rv.wetLevel,0.63f);
+            c.verb.setParameters(rv);
             c.verb.processStereo(left, right, len);
-            for (int ch = 0; ch < std::min(2, out.buffer->getNumChannels()); ++ch)
-                out.buffer->addFrom(ch, out.startSample + base, scratch, ch, 0, len,
-                                    (strips[l].enabled.load() ? v[gain] : 0.f) * 0.01f * volume *
-                                        (1 + (ch ? pan[l] : -pan[l])));
+            const float targetGain=(strips[l].enabled.load()?v[gain]:0.f)*0.01f*volume;
+            const float startGain=c.mixGain;
+            c.mixGain=targetGain+(startGain-targetGain)*float(std::exp(-len/(0.008*sampleRate)));
+            for(int ch=0;ch<std::min(2,out.buffer->getNumChannels());++ch){
+                const float balance=1+(ch?pan[l]:-pan[l]);
+                scratch.applyGainRamp(ch,0,len,startGain*balance,c.mixGain*balance);
+                out.buffer->addFrom(ch,out.startSample+base,scratch,ch,0,len);
+            }
+            if(stemSink) stemSink(l,scratch,len);
         }
         cycles += len * cycleInc;
         clockTime = startTime + len / sampleRate;
@@ -400,6 +503,16 @@ void TransportAudioEngine::getNextAudioBlock(const juce::AudioSourceChannelInfo 
         auto *samples = out.buffer->getWritePointer(ch, out.startSample);
         for (int i = 0; i < out.numSamples; ++i)
             samples[i] = std::tanh(samples[i]);
+    }
+    if(out.numSamples>0 && out.buffer->getNumChannels()>0){
+        float power=0;
+        const int measuredChannels=std::min(2,out.buffer->getNumChannels());
+        for(int ch=0;ch<measuredChannels;++ch){
+            const float rms=out.buffer->getRMSLevel(ch,out.startSample,out.numSamples);
+            power+=rms*rms/measuredChannels;
+        }
+        const float weight=float(std::exp(-out.numSamples/(sampleRate*0.4)));
+        outputPower=weight*outputPower.load()+(1-weight)*power;
     }
     elapsed = clockTime;
     position = cycles;

@@ -17,6 +17,16 @@ struct BeatGrid
     static constexpr int maxBodies = 32;
     int bodies = 8;
     int passesPerReunion = 8;
+    int bassSeed=-1, melodyBefore=-1, melodyAfter=-1;
+    int64_t bassStart=0, melodySwitch=0;
+    int64_t sourceStep(int layer,int64_t step) const noexcept {
+        return layer==1 && bassSeed>=0 ? bassStart+step%phraseLength() : step;
+    }
+    int laneSeed(int layer,int64_t step) const noexcept {
+        if(layer==1 && bassSeed>=0)return bassSeed;
+        const int choice=step<melodySwitch?melodyBefore:melodyAfter;
+        return layer==0 && choice>=0 ? choice : seed;
+    }
     int phraseLength() const noexcept { return passesPerReunion * bodies; }
     // Rotate the first player each pass so recurring groove rests do not
     // always suppress the same nodes when the body count is even.
@@ -25,8 +35,8 @@ struct BeatGrid
     static int groove(int seed) { return (seed + 3) % 4; } // The initial seed opens on Even current.
     float accent(int layer, int64_t step) const
     {
-        int group = groove(seed) == 1 ? 3 : 4;
-        return ((step + layer) % group == 0) ? 1.f : 0.78f;
+        int group = groove(laneSeed(layer,step)) == 1 ? 3 : 4;
+        return ((sourceStep(layer,step) + layer) % group == 0) ? 1.f : 0.78f;
     }
     static unsigned hash(unsigned x) noexcept
     {
@@ -38,19 +48,20 @@ struct BeatGrid
     }
     unsigned key(int layer, int64_t step) const noexcept
     {
-        return static_cast<unsigned>(seed) + static_cast<unsigned>(step) * 2654435761u + layer * 173u;
+        return static_cast<unsigned>(laneSeed(layer,step)) + static_cast<unsigned>(sourceStep(layer,step)) * 2654435761u + layer * 173u;
     }
     bool sounds(int layer, int64_t step) const noexcept
     {
         if (probability[layer] <= 0)
             return false;
         // Keep phrase downbeats and the regular common pulse audible despite chance rests.
-        if (step % phraseLength() == 0 || step % (4 * divisions[layer]) == 0)
+        const auto source=sourceStep(layer,step);
+        if (source % phraseLength() == 0 || source % (4 * divisions[layer]) == 0)
             return true;
         if (layer == 0 || layer == 1)
         {
-            const auto beat = step + 2 * layer;
-            switch (groove(seed))
+            const auto beat = source + 2 * layer;
+            switch (groove(laneSeed(layer,step)))
             {
             case 1:
                 if (beat % 6 == 5)
@@ -75,25 +86,32 @@ struct BeatGrid
     {
         if (!sounds(layer, step))
             return 0;
-        return step % phraseLength() == 0 ? allBodiesMask() : (1u << soloBody(step));
+        return step % phraseLength() == 0 ? allBodiesMask() : (1u << soloBody(sourceStep(layer,step)));
     }
     struct Flight { double phase, cycles; };
-    Flight flight(double cycles, int layer, int body) const noexcept
+    struct FlightWindow { int64_t before{}, after{}; };
+    FlightWindow flightWindow(int64_t before, int layer, int body) const noexcept
     {
-        // Use absolute steps: chance and groove decisions can differ between phrases.
-        // Both searches terminate at the nearest guaranteed sounding phrase boundary.
-        if (probability[layer] <= 0)
-            return {0.5, 0};
-        const double pos = std::max(0., cycles) * divisions[layer] * 0.5;
-        auto before = static_cast<int64_t>(std::floor(pos));
+        // Both searches terminate at a guaranteed audible phrase boundary.
         auto after = before + 1;
         const unsigned bit = 1u << body;
         while ((attackMask(layer, before) & bit) == 0)
             --before;
         while ((attackMask(layer, after) & bit) == 0)
             ++after;
+        return {before,after};
+    }
+    Flight sampleFlight(double pos,int layer,FlightWindow window) const noexcept
+    {
+        const auto [before,after]=window;
         return {(pos - static_cast<double>(before)) / static_cast<double>(after - before),
                 2.0 * (after - before) / divisions[layer]};
+    }
+    Flight flight(double cycles,int layer,int body) const noexcept
+    {
+        if(probability[layer]<=0) return {0.5,0};
+        const double pos=std::max(0.,cycles)*divisions[layer]*0.5;
+        return sampleFlight(pos,layer,flightWindow(static_cast<int64_t>(std::floor(pos)),layer,body));
     }
     double orbitPhase(double cycles, int layer, int body) const noexcept
     {

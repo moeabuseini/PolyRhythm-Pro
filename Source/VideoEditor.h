@@ -1,4 +1,5 @@
 #pragma once
+#include "GlassTheme.h"
 #include "StudioSettings.h"
 
 inline StudioState videoCue(const juce::String& key,int frame,int length,double value)
@@ -17,15 +18,16 @@ public:
     juce::TextEditor name, caption;
     juce::Slider frame,length,value,duration;
     juce::ComboBox choice;
+    juce::ToggleButton loop{"Loop preview"};
     juce::ToggleButton reunion{"Finish at next full reunion"};
     juce::TextButton create{"New from current"}, add{"Add cue"}, replace{"Update cue"}, remove{"Remove cue"},
                      save{"Save"}, saveCopy{"Save copy"}, trash{"Remove saved..."}, preview{"Preview"}, close{"Close"},
-                     edit{"Edit timeline"}, opening{"Use current as opening"};
+                     importPreset{"Import..."}, exportPreset{"Export..."}, edit{"Edit timeline"}, opening{"Use current as opening"};
     juce::ToggleButton showCaption{"Caption"};
     juce::Label message;
     VideoEditor(const std::vector<StudioSetting>& specs):settings(specs)
     {
-        for(juce::Component* c:std::initializer_list<juce::Component*>{&library,&name,&cues,&category,&parameter,&frame,&length,&value,&choice,&duration,&caption,&showCaption,&reunion,&create,&add,&replace,&remove,&save,&saveCopy,&trash,&preview,&close,&message,&edit,&opening,&track})
+        for(juce::Component* c:std::initializer_list<juce::Component*>{&library,&name,&cues,&category,&parameter,&frame,&length,&value,&choice,&duration,&caption,&showCaption,&reunion,&create,&add,&replace,&remove,&save,&saveCopy,&trash,&preview,&close,&message,&edit,&loop,&importPreset,&exportPreset,&opening,&track})
             addAndMakeVisible(c);
         for(const auto& setting:settings)
             if(!sections.contains(setting.section)) sections.add(setting.section);
@@ -46,7 +48,7 @@ public:
             sequence.setProperty("duration",int(duration.getValue()),nullptr);
             updateBounds();
         };
-        caption.setTextToShowWhenEmpty("Leave blank for automatic wording",juce::Colour(0xffaab5c9));
+        caption.setTextToShowWhenEmpty("Leave blank for automatic wording",GlassTheme::current().colours().muted());
         showCaption.onClick=[this]{caption.setEnabled(showCaption.getToggleState());};
         track.select=[this](int id){cues.setSelectedId(id,juce::sendNotificationSync);};
         track.seek=[this](int position){frame.setValue(position);};
@@ -55,12 +57,14 @@ public:
         cues.onChange=[this]{ editSelected(); };
         add.onClick=[this]{commit(false);};replace.onClick=[this]{commit(true);};
         remove.onClick=[this]{int i=cues.getSelectedId(); if(i>0){sequence.removeChild(i,nullptr);list(i-1);}};
+        loop.onClick=[this]{sequence.setProperty("loop",loop.getToggleState(),nullptr);};
         reunion.onClick=[this]{sequence.setProperty("reunion",reunion.getToggleState(),nullptr);};
         name.onTextChange=[this]{sequence.setProperty("name",name.getText(),nullptr);};
     }
     void load(StudioState s)
     {
         sequence=s.createCopy();name.setText(s["name"].toString(),false);
+        loop.setToggleState(bool(s["loop"]),juce::dontSendNotification);
         reunion.setToggleState(bool(s["reunion"]),juce::dontSendNotification);
         updateBounds(); configureValue(); list(1);
         if(cues.getNumItems()==0) {
@@ -85,11 +89,13 @@ public:
     }
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xce08111e)); auto r=panel.toFloat();
-        g.setGradientFill({juce::Colour(0xff293e50),r.getTopLeft(),juce::Colour(0xff192232),r.getBottomRight(),false});
-        g.fillRoundedRectangle(r,18);g.setColour(juce::Colours::white);g.setFont(juce::FontOptions(25.f));
+        const auto& theme=GlassTheme::current();
+        const auto& p=theme.colours();
+        g.fillAll(p.background.withAlpha(0.8f));
+        theme.surface(g,panel.toFloat(),p.panel,false,false);
+        g.setColour(p.text());g.setFont(theme.font(25.f));
         g.drawText("Create video",panel.reduced(22,12).removeFromTop(36),juce::Justification::centredLeft);
-        g.setFont(juce::FontOptions(15.f));
+        g.setFont(theme.font(15.f));
         if(editing)
             for(auto item:std::initializer_list<std::pair<const char*,juce::Component*>>{{"Name",&name},{"Timeline length",&duration},
                     {"Selected cue",&cues},{"What changes",&category},{"Start",&frame},{"Fade to target",&length},{"Target",&value}})
@@ -102,7 +108,8 @@ public:
     {
         panel=getLocalBounds().withSizeKeepingCentre(juce::jmin(800,getWidth()),juce::jmin(editing?600:218,getHeight()));
         auto r=panel.reduced(22,12);r.removeFromTop(42);
-        auto lib=r.removeFromTop(35).reduced(1,2);create.setBounds(lib.removeFromRight(148));library.setBounds(lib);
+        auto lib=r.removeFromTop(35).reduced(1,2);
+        exportPreset.setBounds(lib.removeFromRight(82));importPreset.setBounds(lib.removeFromRight(82));create.setBounds(lib.removeFromRight(148));library.setBounds(lib);
         if(editing) {
             auto row=[&]{return r.removeFromTop(31).withTrimmedLeft(126).reduced(1,2);};
             auto nameRow=row(); opening.setBounds(nameRow.removeFromRight(176).reduced(2,0));
@@ -118,7 +125,7 @@ public:
             add.setBounds(buttons.removeFromLeft(90));replace.setBounds(buttons.removeFromLeft(100));
             remove.setBounds(buttons.removeFromLeft(105));reunion.setBounds(buttons);
         } else summary=r.removeFromTop(40);
-        message.setBounds(r.removeFromTop(36));
+        auto status=r.removeFromTop(36);loop.setBounds(status.removeFromRight(130));message.setBounds(status);
         auto buttons=r.removeFromTop(35).reduced(1,2);
         close.setBounds(buttons.removeFromRight(75));preview.setBounds(buttons.removeFromRight(104));
         edit.setBounds(buttons.removeFromLeft(120));
@@ -143,18 +150,20 @@ private:
             return rail().getY()+26+stack*13.f;
         }
         void paint(juce::Graphics& g) override {
-            g.setColour(juce::Colour(0xff141e30));g.fillRoundedRectangle(getLocalBounds().toFloat(),9);
-            g.setFont(juce::FontOptions(12.f));
+            const auto& theme=GlassTheme::current();
+            const auto& p=theme.colours();
+            theme.surface(g,getLocalBounds().toFloat(),p.background,false,false,true);
+            g.setFont(theme.font(12.f));
             for(int tick=0;tick<=4;++tick){
                 const int f=limit*tick/4;const float x=xAt(f);
-                g.setColour(juce::Colour(0xff354457));g.drawVerticalLine(int(x),rail().getY()+16,rail().getBottom());
+                g.setColour(p.control);g.drawVerticalLine(int(x),rail().getY()+16,rail().getBottom());
                 const int px=juce::jlimit(2,std::max(2,getWidth()-52),int(x)-25);
-                g.setColour(juce::Colour(0xffbdccdf));g.drawText(juce::String(f/30.,1)+" s",px,4,50,16,juce::Justification::centred);
+                g.setColour(p.muted());g.drawText(juce::String(f/30.,1)+" s",px,4,50,16,juce::Justification::centred);
             }
             for(int i=1;i<sequence.getNumChildren();++i){
                 const auto cue=sequence.getChild(i);
                 const float x=xAt(int(cue["frame"])), y=yAt(i);
-                g.setColour(i==selected?juce::Colour(0xffc9fff1):juce::Colour(0xff81a4d8));
+                g.setColour(i==selected ? p.accent : p.secondary);
                 if(int(cue["length"])>0)
                     g.drawLine(x,y,xAt(int(cue["frame"])+int(cue["length"])),y,i==selected?3.f:1.4f);
                 g.fillEllipse(x-4,y-4,8,8);

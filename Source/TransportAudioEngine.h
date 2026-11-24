@@ -39,12 +39,33 @@ class TransportAudioEngine final : public juce::AudioSource
     std::atomic<int> masterTranspose{0};
     std::atomic<int> chordShape{0}, chordTouch{0};
 
+    // Message-thread snapshots of the journal are taken under the device callback lock.
+    struct ScoreNote {double seconds, duration;int layer, pitch;float velocity;};
+    std::vector<ScoreNote> journal=std::vector<ScoreNote>(65536);
+    size_t journalWrite=0, journalCount=0;
+    double journalOrigin=0,lastMeeting=-1,previousMeeting=-1;
+    std::atomic<int> bassSeed{-1},bassStart{0},melodyBefore{-1},melodyAfter{-1},melodySwitch{0};
+    std::atomic<bool> roadmap{false}, resolveCue{false}, spaceCue{false};
+    std::array<std::atomic<int>,4> chordRoots{{2,10,5,0}}, chordKinds{{1,2,0,4}};
+    std::atomic<float> outputPower{0};
+    bool suppressAttacks=false; // offline renderer only
+    std::function<void(int,const juce::AudioBuffer<float>&,int)> stemSink;
+    void copySetupTo(TransportAudioEngine&) const;
+    int nextNodePitch(int layer,int body,double position) const;
+    void audition(int layer,int midi);
   private:
+    void remember(double seconds,double duration,int layer,int midi,float strength);
+    int pitchAt(const studio::BeatGrid&,int layer,int64_t step,int body,double pos,bool tonic,int stackIndex,int companion) const;
+    int harmonicPitch(int midi,int layer,double position,bool tonic) const;
+    double spaceUntil=-1;
+    std::atomic<int> auditionRequest{-1};
+
     struct Note
     {
         float phase{}, stringPhase{}, step{}, amp{}, fall{}, attack{}, rise{}, brightness{};
         int sound{}, delaySamples{};
     };
+    Note previewNote;
     struct Grain
     {
         float offset{}, stride{}, phase{}, increment{};
@@ -61,12 +82,13 @@ class TransportAudioEngine final : public juce::AudioSource
         std::vector<float> history;
         int write{}, nextNote{}, nextGrain{}, countdown{};
         unsigned grainNumber{};
+        float tapFrom{}, tapTo{}, tapBlend{1.f}, mixGain{};
         float low{}, high{}, filtered{}, modPhase{};
         int64_t lastStep = -1;
     };
     void trigger(int layer, int64_t step, double eventPosition, double eventTime, int instrument,
                  const studio::Values &, const studio::BeatGrid &, int globalShift, bool onBoundary);
-    void soundReunion(Channel &, int layer, int degree, int transpose);
+    void soundReunion(Channel &, int layer, int degree, int transpose,double position,double seconds,bool tonic);
     float synthNote(Note &);
     float synth(Channel &);
     float wave(float phase) const noexcept;

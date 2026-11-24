@@ -1,4 +1,5 @@
 #pragma once
+#include "GlassTheme.h"
 #include "StudioSettings.h"
 
 // A sheet lives inside the main window, so it also works in full screen.
@@ -123,11 +124,9 @@ public:
     }
     void paint(juce::Graphics& g) override
     {
-        g.fillAll(juce::Colour(0xb0040914));
-        auto panel=sheet.toFloat();
-        g.setGradientFill({juce::Colour(0xff283346),panel.getTopLeft(),juce::Colour(0xff131c2c),panel.getBottomRight(),false});
-        g.fillRoundedRectangle(panel,18);
-        g.setColour(juce::Colour(0x559bbcd3)); g.drawRoundedRectangle(panel,18,1);
+        const auto& theme=GlassTheme::current();
+        g.fillAll(theme.colours().background.withAlpha(0.74f));
+        theme.surface(g,sheet.toFloat(),theme.colours().panel,false,false);
     }
     void resized() override
     {

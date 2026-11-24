@@ -1,0 +1,42 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Sequence name="Infinity Spiral" duration="2100" reunion="1" returnToOpening="1" returnCaption="Can you still hear the first strand?" loop="1">
+  <Patch bpm="56" melody="3.0" bass="6.0" seed="612451.0" transpose="0" level="58" shape="0.0" touch="0.0" nodes="3" passes="12.0" travel="0.0" orbitScale="567.0" pointCoverage="80.0" balance="1.0" offset="0" spread="88" track="0.0" trackHeight="168.0" environment="3" target="1.0" meeting="1.0" layer0_on="1.0" layer0_voice="0.0" layer0_order="0.0" layer0_copies="1.0" layer0_dial0="82.0" layer0_dial1="0.0" layer0_dial2="0.0" layer0_dial3="1.0" layer0_dial4="100.0" layer0_dial5="1.5" layer0_dial6="2300" layer0_dial7="0.0" layer0_dial8="0.0" layer0_dial9="72.0" layer0_dial10="0" layer0_dial11="0" layer0_dial12="36.0" layer0_dial13="0" layer0_dial14="0.4000000059604645" layer0_dial15="0.0" layer0_dial16="8.0" layer0_dial17="5.0" layer0_dial18="180.0" layer0_dial19="15.0" layer0_dial20="0.0" layer0_dial21="48.0" layer0_dial22="85.0" layer0_dial23="38.0" layer0_dial24="8.0" layer0_dial25="14.0" layer1_on="0" layer1_voice="2.0" layer1_order="1.0" layer1_copies="1.0" layer1_dial0="0" layer1_dial1="0.0" layer1_dial2="0.0" layer1_dial3="3.0" layer1_dial4="100.0" layer1_dial5="1.5" layer1_dial6="1400" layer1_dial7="0.0" layer1_dial8="0.0" layer1_dial9="72.0" layer1_dial10="0" layer1_dial11="0.0" layer1_dial12="36.0" layer1_dial13="0" layer1_dial14="0.4000000059604645" layer1_dial15="0.0" layer1_dial16="8.0" layer1_dial17="5.0" layer1_dial18="180.0" layer1_dial19="15.0" layer1_dial20="0.0" layer1_dial21="48.0" layer1_dial22="85.0" layer1_dial23="38.0" layer1_dial24="8.0" layer1_dial25="14.0" layer2_on="0" layer2_voice="3.0" layer2_order="0.0" layer2_copies="1.0" layer2_dial0="0" layer2_dial1="0.0" layer2_dial2="0.0" layer2_dial3="4.0" layer2_dial4="100.0" layer2_dial5="2.5" layer2_dial6="2700" layer2_dial7="0.0" layer2_dial8="0.0" layer2_dial9="72.0" layer2_dial10="0" layer2_dial11="0" layer2_dial12="36.0" layer2_dial13="0" layer2_dial14="0.4000000059604645" layer2_dial15="0.0" layer2_dial16="8.0" layer2_dial17="5.0" layer2_dial18="180.0" layer2_dial19="15.0" layer2_dial20="0.0" layer2_dial21="48.0" layer2_dial22="85.0" layer2_dial23="38.0" layer2_dial24="8.0" layer2_dial25="14.0" layer3_on="0" layer3_voice="4.0" layer3_order="0.0" layer3_copies="1.0" layer3_dial0="0" layer3_dial1="0.0" layer3_dial2="0.0" layer3_dial3="4.0" layer3_dial4="100.0" layer3_dial5="4.0" layer3_dial6="9000.0" layer3_dial7="0.0" layer3_dial8="0.0" layer3_dial9="72.0" layer3_dial10="0" layer3_dial11="0" layer3_dial12="26.0" layer3_dial13="0" layer3_dial14="0.4000000059604645" layer3_dial15="30.0" layer3_dial16="8.0" layer3_dial17="5.0" layer3_dial18="180.0" layer3_dial19="15.0" layer3_dial20="0.0" layer3_dial21="69.0" layer3_dial22="85.0" layer3_dial23="38.0" layer3_dial24="8.0" layer3_dial25="14.0" layer4_on="0" layer4_voice="8.0" layer4_order="0.0" layer4_copies="1.0" layer4_dial0="0" layer4_dial1="0.0" layer4_dial2="0.0" layer4_dial3="1.0" layer4_dial4="100.0" layer4_dial5="1.5" layer4_dial6="3200" layer4_dial7="0.0" layer4_dial8="0.0" layer4_dial9="72.0" layer4_dial10="0" layer4_dial11="0" layer4_dial12="36.0" layer4_dial13="0" layer4_dial14="0.4000000059604645" layer4_dial15="0.0" layer4_dial16="8.0" layer4_dial17="5.0" layer4_dial18="180.0" layer4_dial19="15.0" layer4_dial20="0.0" layer4_dial21="48.0" layer4_dial22="85.0" layer4_dial23="38.0" layer4_dial24="8.0" layer4_dial25="14.0" layer0_distance="100.0" layer0_line="0.0" layer0_point="0.0" layer1_distance="100.0" layer1_line="0.0" layer1_point="0.0" layer2_distance="100.0" layer2_line="0.0" layer2_point="0.0" layer3_distance="100.0" layer3_line="0.0" layer3_point="0.0" layer4_distance="100.0" layer4_line="0.0" layer4_point="0.0" sky2_look0="236" sky2_look1="6000" sky2_look2="94" sky2_look3="80" sky2_look4="89" sky2_look5="90" sky2_look6="100" sky2_cycle="1" sky2_speed="0" sky2_range="45" sky2_camera="1" sky2_depth="90" layer0_hue="-28" layer0_size="96" layer0_halo="90" layer0_trail="38" layer0_glow="48" layer1_hue="9" layer1_size="110" layer1_halo="90" layer1_trail="38" layer1_glow="48" layer2_hue="-12" layer2_size="96" layer2_halo="90" layer2_trail="38" layer2_glow="48" layer3_hue="0" layer3_size="96" layer3_halo="90" layer3_trail="38" layer3_glow="48" layer4_hue="15" layer4_size="96" layer4_halo="90" layer4_trail="38" layer4_glow="48" />
+  <Cue frame="0" length="35" key="level" value="72" caption="Follow one strand across the water. The piano marks its return." />
+  <Cue key="level" frame="116" length="31" value="28" caption="" />
+  <Cue frame="151" length="0" key="transpose" value="-5.0" caption="Hear the piano answer five semitones lower." />
+  <Cue frame="153" length="0" key="nodes" value="8" caption="" />
+  <Cue key="level" frame="158" length="40" value="85" caption="" />
+  <Cue frame="200" length="0" key="layer1_on" value="1.0" caption="" />
+  <Cue frame="200" length="145" key="layer1_dial0" value="65.0" caption="" />
+  <Cue frame="220" length="180" key="layer0_dial10" value="28.0" caption="" />
+  <Cue frame="230" length="180" key="layer0_dial11" value="18.0" caption="" />
+  <Cue frame="240" length="180" key="layer0_dial13" value="12.0" caption="" />
+  <Cue frame="260" length="180" key="layer1_dial10" value="9.0" caption="" />
+  <Cue key="nodes" frame="320" length="0" value="16" caption="Watch the lights gather without losing the pulse." />
+  <Cue frame="340" length="180" key="layer1_dial13" value="12.0" caption="" />
+  <Cue key="nodes" frame="419" length="0" value="24" caption="" />
+  <Cue key="layer0_dial6" frame="440" length="190" value="9000.0" caption="" />
+  <Cue key="layer1_dial6" frame="440" length="190" value="9000.0" caption="" />
+  <Cue frame="450" length="630" key="bpm" value="98.0" caption="Listen to the space between the bass notes getting shorter." />
+  <Cue frame="580" length="0" key="layer2_on" value="1.0" caption="" />
+  <Cue frame="580" length="145" key="layer2_dial0" value="45.0" caption="" />
+  <Cue frame="640" length="180" key="layer2_dial10" value="28.0" caption="" />
+  <Cue frame="680" length="180" key="layer2_dial11" value="18.0" caption="" />
+  <Cue frame="720" length="450" key="offset" value="100.0" caption="" />
+  <Cue frame="720" length="180" key="layer2_dial13" value="12.0" caption="" />
+  <Cue key="layer2_dial6" frame="760" length="190" value="9000.0" caption="" />
+  <Cue frame="900" length="0" key="layer3_on" value="1.0" caption="" />
+  <Cue frame="900" length="145" key="layer3_dial0" value="36.0" caption="" />
+  <Cue frame="960" length="180" key="layer3_dial10" value="74.0" caption="" />
+  <Cue frame="1000" length="180" key="layer3_dial11" value="18.0" caption="" />
+  <Cue frame="1040" length="180" key="layer3_dial13" value="45.0" caption="" />
+  <Cue frame="1140" length="390" key="spread" value="20.0" caption="Watch the wide fan fold into a narrow braid." />
+  <Cue frame="1320" length="0" key="layer4_on" value="1.0" caption="" />
+  <Cue frame="1320" length="145" key="layer4_dial0" value="42.0" caption="" />
+  <Cue frame="1380" length="180" key="layer4_dial10" value="28.0" caption="" />
+  <Cue frame="1420" length="180" key="layer4_dial11" value="18.0" caption="" />
+  <Cue frame="1460" length="180" key="layer4_dial13" value="12.0" caption="" />
+  <Cue key="layer4_dial6" frame="1480" length="190" value="9000.0" caption="" />
+  <Cue frame="1510" length="180" key="layer4_glow" value="72" caption="Listen for the celesta above the choir. Its bright notes are the last voice to join." />
+  <Cue frame="1810" length="190" key="sky2_look5" value="100" caption="For a moment, let the whole sky sing. Watch the strands find one another." />
+</Sequence>

@@ -17,12 +17,17 @@ juce_add_gui_app(PolyRhythmPro
     BUNDLE_ID "com.polyrhythmpro.desktop"
 )
 
+juce_add_binary_data(VideoScores NAMESPACE VideoScores HEADER_NAME VideoScores.h
+    SOURCES Presets/Video/FireflyFloat.xml Presets/Video/InfinitySpiral.xml)
+target_link_libraries(PolyRhythmPro PRIVATE VideoScores)
+
 juce_generate_juce_header(PolyRhythmPro)
 
 target_sources(PolyRhythmPro PRIVATE
     Source/Main.cpp
     Source/MainComponent.cpp
     Source/StudioActions.cpp
+    Source/ProducerTools.cpp
     Source/VideoPlayback.cpp
     Source/RhythmModel.cpp
     Source/TransportAudioEngine.cpp
@@ -50,7 +55,7 @@ target_link_libraries(PolyRhythmPro PRIVATE
 # Retain matching application symbols for local Release minidumps.
 if(MSVC)
     set_property(SOURCE Source/Main.cpp Source/MainComponent.cpp Source/StudioActions.cpp
-        Source/VideoPlayback.cpp Source/TransportAudioEngine.cpp Source/RhythmScene.cpp Source/Landscape.cpp
+        Source/ProducerTools.cpp Source/VideoPlayback.cpp Source/TransportAudioEngine.cpp Source/RhythmScene.cpp Source/Landscape.cpp
         APPEND PROPERTY COMPILE_OPTIONS "$<$<CONFIG:Release>:/Zi>")
     target_link_options(PolyRhythmPro PRIVATE "$<$<CONFIG:Release>:/DEBUG:FULL>")
 endif()

@@ -1,5 +1,7 @@
 #pragma once
+#include "GlassTheme.h"
 #include "NodeVoicing.h"
+#include "PerformanceSlider.h"
 #include "TransportAudioEngine.h"
 
 class VoicingPanel final : public juce::Component
@@ -33,6 +35,7 @@ public:
     void selectLayer(int index)
     {
         layer = index;
+        copies.resetKeys={"layer"+juce::String(layer)+"_copies"};
         const auto& strip = engine.strips[layer];
         order.setSelectedId(strip.pitchMode.load()+1, juce::dontSendNotification);
         // Keep the upper limit editable even on a one-node score; a saved
@@ -67,7 +70,8 @@ public:
     void paint(juce::Graphics& g) override
     {
         auto area=getLocalBounds();
-        g.setColour(juce::Colour(0xffdae0ed)); g.setFont(juce::FontOptions(13.f));
+        const auto& theme=GlassTheme::current();
+        g.setColour(theme.colours().text()); g.setFont(theme.font(13.f));
         g.drawText("Pitch order",area.removeFromTop(32),juce::Justification::centredLeft);
         g.drawText("Nodes per pitch",area.removeFromTop(32),juce::Justification::centredLeft);
         const int chordShape = engine.chordShape.load();
@@ -95,16 +99,19 @@ public:
         const int cellHeight=juce::jmin(38,area.getHeight()/((count+3)/4));
         const double now=juce::Time::getMillisecondCounterHiRes();
         const auto colour=juce::Colour(studio::colours[layer]);
+        const bool forecastPitch=(engine.roadmap || engine.bassSeed>=0 || engine.melodyAfter>=0 || engine.melodyBefore>=0) && engine.grid().probability[layer]>0;
         for (int node=0;node<count;++node) {
             juce::Rectangle<int> cell(area.getX()+(node%4)*cellWidth, area.getY()+(node/4)*cellHeight,
                                       cellWidth,cellHeight);
             const bool active=litUntil[node]>now;
             g.setColour(colour.withAlpha(active ? 0.42f : 0.10f));
             g.fillRoundedRectangle(cell.reduced(2).toFloat(),5);
-            g.setColour(colour); g.setFont(juce::FontOptions(11.f));
+            g.setColour(colour); g.setFont(GlassTheme::current().font(11.f));
             g.drawText(juce::String(node+1),cell.removeFromLeft(23),juce::Justification::centred);
-            const int midi=studio::nodePitch(layer,node,count,groupSize,mode,seed,shift,chordShape) + globalShift;
-            g.setColour(juce::Colours::white); g.setFont(juce::FontOptions(14.f));
+            const int midi=forecastPitch
+                ? engine.nextNodePitch(layer,node,engine.playhead())
+                : studio::nodePitch(layer,node,count,groupSize,mode,seed,shift,chordShape)+globalShift;
+            g.setColour(juce::Colours::white); g.setFont(GlassTheme::current().font(14.f));
             g.drawText(juce::MidiMessage::getMidiNoteName(midi,true,true,4),cell,juce::Justification::centred);
         }
     }
@@ -112,6 +119,6 @@ private:
     TransportAudioEngine& engine;
     int layer=0;
     juce::ComboBox order, shape, touch;
-    juce::Slider copies;
+    PerformanceSlider copies;
     std::array<double,studio::BeatGrid::maxBodies> litUntil{};
 };
