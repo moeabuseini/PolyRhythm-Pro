@@ -2,12 +2,13 @@
 
 #include <JuceHeader.h>
 #include <functional>
-#include "RhythmModel.h"
-#include "LayerInspector.h"
-#include "TransportAudioEngine.h"
-#include "GlassTheme.h"
-#include "SettingsSheet.h"
-#include "VideoEditor.h"
+#include "../Rhythm/RhythmModel.h"
+#include "../UI/LayerInspector.h"
+#include "../Audio/TransportAudioEngine.h"
+#include "../UI/GlassTheme.h"
+#include "../UI/SettingsSheet.h"
+#include "../Video/VideoEditor.h"
+#include "../UI/SaveReceipt.h"
 
 class MainComponent final : public juce::Component,
                             public juce::AudioSource,
@@ -39,12 +40,46 @@ private:
     void randomize(bool everything);
     void showSettings(bool defaults);
     void showPresets();
+    void transferPreset(bool exporting,bool sequence);
+    std::unique_ptr<juce::FileChooser> transferChooser;
     void savePreset();
     StudioState factoryPatch(int index);
     void chooseStartupPreset();
     void loadFactory(int index);
     void toggleFullscreen();
     void menuFor(int);
+    juce::TextButton producer{"Producer"};
+    void initProducer();
+    void refreshProducer();
+    bool actionEnabled(int) const;
+    juce::ApplicationCommandManager commands;
+    std::unique_ptr<juce::DialogWindow> shortcutDialog;
+    void showShortcuts();
+    SaveReceipt receipt;
+    void saved(const juce::String&,const juce::File&);
+    void captured(const juce::String&,const juce::String&);
+    void placeReceipt();
+    StudioState priorMix;
+    std::array<bool,2> storedMix{};
+    bool fanReturns=true,automationStartedTransport=false;
+    void cancelFan();
+    void producerAction(int);
+    void catchMidi(int window);
+    void exportStems();
+    juce::ThreadPool renderPool{1};
+    void mixSlot(int slot,bool store);
+    void editRoadmap();
+    int heldExposureKey=0,lastShortcutKey=0;
+    bool keyStateChanged(bool) override;
+    void sampleGesture();
+    void finishGesture();
+    void notifyProducer(const juce::String& text);
+    juce::File exports() const { return userSettings.getChildFile("Exports"); }
+    StudioState gesture;
+    double gestureStart=0, fanLastCycle=-1, fanBeats=0;
+    std::vector<double> gestureValues;
+    std::array<int,3> variants{{-1,-1,-1}};
+    bool fanCue=false;
     void openVideo();
     void previewVideo();
     void updateVideo(double elapsed,bool reunion);
@@ -52,12 +87,18 @@ private:
     void populateVideos();
     std::unique_ptr<VideoEditor> video;
     std::vector<StudioState> sequences;
-    struct LiveCue {size_t index; int frame,length; double from,to; bool complete=false;};
+    struct LiveCue {size_t index; int frame,length; double from,to;};
     std::vector<LiveCue> timeline;
+    size_t nextVideoCue=0;
+    std::vector<size_t> fadingCues;
     struct Narration { double start, end; juce::String text; };
     std::vector<Narration> narration;
     bool videoReunion = false;
-    StudioState beforeVideo;
+    StudioState beforeVideo,videoOpening,videoPeak;
+    double openingPhase=0,videoClockOffset=0,returnStart=-1;
+    bool returnToOpening=false,loopVideo=false;
+    void restartVideoPass();
+    void completeVideoPass();
     double beforePosition=0, videoEnd=0, reunionEnd=-1;
     bool filming=false, wasPlaying=false;
     juce::TextButton createVideo{"Create video"};
@@ -66,16 +107,22 @@ private:
     void managePreset(juce::File);
     void checkpoint();
     void travelHistory(int);
+    void resetPerformanceControls(const juce::StringArray& keys);
     void mouseDown(const juce::MouseEvent&) override;
     juce::Component::SafePointer<juce::Slider> lastSlider;
     std::vector<StudioState> history;
     int historyIndex=-1;
+    std::vector<double> currentHistoryValues;
+    void indexCurrentHistory();
     bool warn=true;
     std::array<juce::TextButton,4> menus;
-    void configureButton(juce::TextButton& button, bool primary = false);
-    void styleSlider(juce::Slider& slider, const juce::Colour& accent);
+    void configureButton(juce::TextButton& button);
+    void addAppearanceMenu(juce::PopupMenu&);
+    void applyAppearance(const Appearance&);
+    void saveAppearance(const Appearance&);
+    void styleSlider(juce::Slider& slider);
     void styleLabel(juce::Label& label, const juce::String& text, float size, bool muted = false);
-    void paintCard(juce::Graphics& g, juce::Rectangle<int> bounds, juce::Colour fill = juce::Colour(0xff18212b));
+    void paintCard(juce::Graphics& g, juce::Rectangle<int> bounds, juce::Colour fill);
     void showAudioError(const juce::String& errorMessage);
 
     class ErrorReportingAudioSourcePlayer final : public juce::AudioSourcePlayer
@@ -110,14 +157,8 @@ private:
                 voiceALabel, voiceBLabel, cycleLabel, volumeLabel, presetLabel, transposeLabel;
     juce::ComboBox voiceABox, voiceBBox, presetBox, environmentBox, targetBox, meetingBox;
     std::array<juce::ToggleButton,studio::layerCount> layerButtons;
-    juce::Slider tempoSlider, volumeSlider, transposeSlider;
+    PerformanceSlider tempoSlider, volumeSlider, transposeSlider;
     juce::TextButton playButton { "PLAY" }, resetButton { "RESET" };
-    juce::Colour background { 0xff0c1117 };
-    juce::Colour panel { 0xff141c25 };
-    juce::Colour textPrimary { 0xffedf3f7 };
-    juce::Colour textMuted { 0xff8b9aa8 };
-    juce::Colour accentA { 0xff59e0d0 };
-    juce::Colour accentB { 0xffffa66d };
     bool audioErrorVisible = false;
     bool audioCallbackRegistered = false;
     juce::String audioError;

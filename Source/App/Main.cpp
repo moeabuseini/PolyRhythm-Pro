@@ -61,6 +61,7 @@ private:
         {
             setUsingNativeTitleBar(true);
             setContentOwned(new MainComponent(), true);
+            setBackgroundColour(GlassTheme::current().colours().background);
             setResizable(true, true);
             centreWithSize(1280, 820);
             setResizeLimits(1180, 680, 10000, 10000);

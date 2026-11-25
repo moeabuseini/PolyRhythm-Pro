@@ -1,9 +1,9 @@
-#include "MainComponent.h"
+#include "../App/MainComponent.h"
 
 namespace
 {
-const juce::StringArray environmentNames{"Eclipse Garden","Aurora Loom","Lunar Tide"};
-const juce::StringArray factoryNames{"Nocturne Atlas","Copper Canopy","Glass Tides","Polar Drift"};
+
+const juce::StringArray factoryNames{"Nocturne Atlas","Copper Canopy","Glass Tides","Polar Drift","Silt and Silk","Glacial Meridian","Midnight Lotus","Wind Harp","Pelagic Spiral","Silk Caravan","Resonant Ice","Velvet Valentine","Helix Current","Glass Box","Sun Temple"};
 const juce::StringArray switches{"Off","On"};
 const auto quiet = juce::dontSendNotification;
 juce::String layerPrefix(int layer) { return "layer" + juce::String(layer) + "_"; }
@@ -31,15 +31,38 @@ void MainComponent::makeCatalogue()
         [this](double n){ volumeSlider.setValue(n/100,quiet); engine.setMasterVolume(float(n/100)); });
     bind("shape","Chord voicing",engine.chordShape,0,4,1,"",{"Seventh","Triad","First inversion","Sus 2","Stacked fourths"});
     bind("touch","Chord articulation",engine.chordTouch,0,2,1,"",{"One tone","Block","Rolled"});
+    section="Producer";
+    bind("roadmap","Harmonic roadmap",engine.roadmap,0,1,1,"",switches);
+    for(int i=0;i<4;++i){
+        const auto slot=juce::String(i+1);
+        bind("root"+slot,"Chord "+slot+" root",engine.chordRoots[i],0,11,1,"",{"C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"});
+        bind("quality"+slot,"Chord "+slot+" quality",engine.chordKinds[i],0,4,1,"",{"Major","Minor 9","Major 7","Dominant 7","Add 9"});
+    }
+    bind("resolveCue","Resolve on reunion",engine.resolveCue,0,1,1,"",switches);
+    bind("spaceCue","Reverb lift on reunion",engine.spaceCue,0,1,1,"",switches);
+    bind("fanReturns","Return fan to its spread",fanReturns,0,1,1,"",switches);
+    for(int i=0;i<3;++i)bind("variant"+juce::String(i),"Melody bank "+juce::String::charToString('A'+i),variants[i],-1,999998);
+    bind("fanCue","Open fan on reunion",fanCue,0,1,1,"",switches);
+    bind("bassSeed","Locked bass seed",engine.bassSeed,-1,999998);
+    bind("bassStart","Locked bass phrase start",engine.bassStart,0,100000000);
+    bind("melodyBefore","Previous melody seed",engine.melodyBefore,-1,999998);
+    bind("melodyAfter","Variation seed",engine.melodyAfter,-1,999998);
+    bind("melodySwitch","Variation starts at step",engine.melodySwitch,0,100000000);
+    bind("shotCamera","Reunion camera",scene.shotCamera,0,1,1,"",switches);
+    bind("closeShot","Close magnification",scene.closeShot,0,3,1,"",{"1.25x","1.5x","1.85x","2.25x"});
+    bind("shotLead","Camera pullback",scene.shotLead,0,3,1,"",{"3 seconds","6 seconds","10 seconds","16 seconds"});
+    bind("portraitSafe","Portrait guide",scene.portraitSafe,0,1,1,"",switches);
     section="Nodes & stage";
     bind("nodes","Nodes per layer",engine.nodesPerLayer,1,studio::BeatGrid::maxBodies);
     bind("passes","Reunion after",engine.reunionPasses,2,16,1," passes");
     bind("travel","Node motion",scene.equalSpeed,0,1,1,"",{"Variable speed","Equal speed / variable distance"});
+    bind("elasticTrails","Trail elasticity",scene.elasticTrails,0,1,1,"",{"Rigid","Elastic"});
     bind("orbitScale","Orbit distance",scene.orbitScale,25,800,1,"%");
     bind("pointCoverage","Point coverage",scene.pointCoverage,0,100,1,"%");
     bind("balance","Auto-balance paths",scene.autoBalance,0,1,1,"",switches);
     bind("offset","Travel offset",scene.timingOffset,-100,100,1,"%");
     bind("spread","Fan spread",scene.fanSpread,0,100,1,"%");
+    bind("syncThreads","Show sync threads",scene.showSyncThreads,0,1,1,"",switches);
     bind("track","Note track",scene.showForecast,0,1,1,"",switches);
     bind("trackHeight","Note track height",scene.trackHeight,48,180,1," px");
     auto combo=[&](juce::String key,juce::String label,juce::ComboBox& control,juce::StringArray choices) {
@@ -47,8 +70,8 @@ void MainComponent::makeCatalogue()
         add(key,label,1,size,1,"",std::move(choices),[&control]{return double(control.getSelectedId());},
             [&control](double id){control.setSelectedId(int(id),quiet);});
     };
-    combo("environment","Environment",environmentBox,environmentNames);
-    combo("target","Convergence",targetBox,{"Line","Point"});
+    combo("environment","Environment",environmentBox,RhythmScene::environmentNames);
+    combo("target","Convergence",targetBox,RhythmScene::formationNames);
     combo("meeting","Skip destination",meetingBox,{"Every point","Layer attacks"});
 
     juce::StringArray sounds;
@@ -68,11 +91,16 @@ void MainComponent::makeCatalogue()
     section="Path placement";
     for(int l=0;l<studio::layerCount;++l) {
         prefix=layerPrefix(l);
+        for(int i=0;i<RhythmScene::brushCount;++i){
+            const auto& d=RhythmScene::brushDials[i];
+            bind(d.id,juce::String(studio::layers[l])+" "+d.label,scene.brushes[l][i],d.low,d.high,1,d.unit);
+        }
+        bind("distance",juce::String(studio::layers[l])+" orbit distance",scene.layerDistance[l],25,400,1,"%");
         bind("line",juce::String(studio::layers[l])+" on line",scene.linePlacement[l],-100,100,1,"%");
         bind("point",juce::String(studio::layers[l])+" around point",scene.pointPlacement[l],-100,100,1,"%");
     }
-    for(int i=0;i<3;++i) {
-        section=environmentNames[i]; prefix="sky"+juce::String(i)+"_";
+    for(int i=0;i<RhythmScene::environmentCount;++i) {
+        section=RhythmScene::environmentNames[i]; prefix="sky"+juce::String(i)+"_";
         auto& look=scene.settingsFor(i);
         const juce::StringArray names{"Sky hue","Stars","Note sparks","Sky drift",scene.details[i][0],scene.details[i][1],"Star twinkle"};
         for(int k=0;k<7;++k)
@@ -98,6 +126,19 @@ void MainComponent::recall(const StudioState& state,bool restart)
         const juce::ScopedLock lock(audioDeviceManager.getAudioCallbackLock());
         if(state.hasType("Patch") && state.hasProperty("layer0_on") && !state.hasProperty("layer4_on"))
             engine.strips[4].enabled = false; // Performances saved before Synth existed.
+        if(state.hasType("Patch") && state.hasProperty("layer0_on"))
+        {
+            for(int l=0;l<studio::layerCount;++l) for(int i=0;i<RhythmScene::brushCount;++i)
+                scene.brushes[l][i]=RhythmScene::brushDials[i].initial;
+            cancelFan();priorMix={};
+            scene.layerDistance.fill(100);
+            for(const auto& s:catalogue)
+                if(s.section=="Producer" && !state.hasProperty(s.id))s.write(factory[s.id]);
+            if(state.hasProperty("fanCue") && bool(state["fanCue"]) && !state.hasProperty("fanReturns"))
+                fanReturns=false; // Existing performances explicitly armed the old stay-open cue.
+            scene.showSyncThreads=true; // Legacy performances always displayed links.
+            scene.elasticTrails=true; // Existing complete patches used spline trails.
+        } // Older complete performances have no per-layer multiplier.
         for(const auto& setting:catalogue) {
             if(!state.hasProperty(setting.id)) continue;
             const double value=state.getProperty(setting.id);
@@ -115,7 +156,8 @@ void MainComponent::recall(const StudioState& state,bool restart)
     for(int l=0;l<studio::layerCount;++l) layerButtons[l].setToggleState(engine.strips[l].enabled.load(),quiet);
     track.setToggleState(scene.showForecast,quiet);
     if(scene.activeEnvironment()!=environmentBox.getSelectedId()-1) scene.setEnvironment(environmentBox.getSelectedId()-1);
-    scene.setPointTarget(targetBox.getSelectedId()==2);
+    if(state.hasProperty("target") && !state.hasProperty("travel")) scene.selectFormation(targetBox.getSelectedId()-1);
+    else scene.setFormation(targetBox.getSelectedId()-1);
     scene.setGrid(engine.grid());
     updatePatternFromControls();
     inspector.syncControls();
@@ -129,6 +171,7 @@ void MainComponent::randomize(bool everything)
         const auto& s=catalogue[i]; const auto& rule=recipe[i];
         const bool protectedMix=s.id=="bpm" || s.id=="level" || s.id=="transpose" || s.id.endsWith("_on") ||
             s.id.endsWith("_"+dialKey(studio::pitch)) || s.id.endsWith("_"+dialKey(studio::octave));
+        if(everything && (s.id=="travel" || s.section=="Producer")) continue; // Use the rolled target's motion.
         if(everything ? protectedMix : !rule.enabled) continue;
         double value=s.draw(rng,everything?s.low:rule.low,everything?s.high:rule.high);
         if(!everything && !s.choices.isEmpty()) {
@@ -163,7 +206,7 @@ void MainComponent::showSettings(bool editDefaults)
                     juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Defaults not saved","Could not write the settings file.");
                     return;
                 }
-                defaults=saved;
+                defaults=saved;this->saved("Startup defaults saved",userSettings.getChildFile("defaults.xml"));
 
             } else { recipe=values; randomize(false); }
             sheet->setVisible(false);
@@ -176,16 +219,29 @@ StudioState MainComponent::factoryPatch(int index)
 {
     auto patch=factory.createCopy();
     // Each row describes an arrangement, not just a ratio or a reverb patch.
-    struct Arrangement { int bpm,a,b,seed,key,env,nodes,shape,touch; std::array<int,4> voice,order,pitch,wet; };
+    struct Arrangement { int bpm,a,b,seed,key,env,nodes,shape,touch,target; std::array<int,4> voice,order,pitch,wet; };
     constexpr Arrangement arrangements[]{
-        {82,5,3,2371,-2,1,9,2,1,{9,7,3,10},{0,0,1,2},{0,0,-2,7},{22,8,35,42}},
-        {72,7,4,6142,3,3,12,3,2,{8,6,1,4},{1,0,0,2},{0,-2,0,5},{38,14,49,64}},
-        {108,8,5,9810,0,2,10,4,2,{1,5,9,10},{2,1,2,0},{7,0,0,0},{24,11,37,52}}
+        {82,5,3,2371,-2,1,9,2,1,1,{9,7,3,10},{0,0,1,2},{0,0,-2,7},{22,8,35,42}},
+        {72,7,4,6142,3,3,12,3,2,1,{8,6,1,4},{1,0,0,2},{0,-2,0,5},{38,14,49,64}},
+        {108,8,5,9810,0,2,10,4,2,1,{1,5,9,10},{2,1,2,0},{7,0,0,0},{24,11,37,52}},
+        {68,5,3,4108,0,4,8,1,2,7,{8,7,0,10},{0,0,1,2},{0,0,0,5},{32,14,42,58}},
+        {76,7,5,6019,-2,6,10,4,1,8,{9,5,1,10},{1,0,0,2},{0,0,0,7},{36,12,46,62}},
+        {66,5,4,5921,2,2,12,3,2,9,{0,6,8,4},{0,0,1,2},{0,0,0,5},{30,10,38,56}},
+        {92,7,3,7835,0,5,6,2,2,5,{8,7,9,10},{0,0,1,2},{0,0,0,0},{20,8,32,40}},
+        {64,7,4,3619,-2,4,9,3,2,10,{9,7,0,10},{0,0,1,2},{0,0,0,5},{32,10,38,54}},
+        {84,5,3,5872,2,5,8,1,2,11,{8,6,1,4},{1,0,0,2},{0,0,0,7},{26,10,35,48}},
+        {70,8,5,6041,0,6,10,4,1,12,{1,7,9,10},{0,0,1,2},{0,0,0,5},{30,10,46,58}},
+        {72,5,3,1713,0,1,10,1,2,RhythmScene::heart+1,{0,7,8,10},{0,0,1,2},{0,0,0,5},{32,10,42,52}},
+        {88,7,4,4863,-2,4,12,3,2,RhythmScene::helix+1,{9,6,1,10},{0,0,1,2},{0,0,0,7},{26,12,34,50}},
+        {80,8,5,5021,2,6,9,4,1,RhythmScene::cube+1,{8,5,9,4},{2,0,1,2},{0,0,0,5},{26,10,38,54}},
+        {76,7,3,7403,0,5,8,2,2,RhythmScene::pyramid+1,{1,7,8,10},{1,0,0,2},{0,0,0,5},{28,12,34,42}}
     };
     auto set=[&](const juce::String& key,int v){patch.setProperty(key,v,nullptr);};
     if(index>0) {
         auto& a=arrangements[index-1];
         set("bpm",a.bpm); set("melody",a.a); set("bass",a.b); set("seed",a.seed); set("transpose",a.key);
+        set("target",a.target);set("travel",RhythmScene::prefersEqualSpeed(a.target-1));
+        if(index>=4) set("spread",100);
         set("environment",a.env); set("nodes",a.nodes); set("shape",a.shape); set("touch",a.touch);
         for(int l=0;l<int(a.voice.size());++l) {
             auto p=layerPrefix(l); set(p+"voice",a.voice[l]); set(p+"order",a.order[l]);
@@ -221,7 +277,7 @@ void MainComponent::chooseStartupPreset()
         saved.copyPropertiesFrom(self->factory,nullptr);
         saved.copyPropertiesFrom(patches[id-1],nullptr);
         if(storeStudioFile(self->userSettings.getChildFile("defaults.xml"),saved))
-            self->defaults=saved;
+            {self->defaults=saved;self->saved("Startup preset saved",self->userSettings.getChildFile("defaults.xml"));}
         else juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
                                                     "Defaults not saved","Could not write startup settings.");
     });
@@ -268,11 +324,20 @@ void MainComponent::savePreset()
         auto patch=captureStudio(self->catalogue);
         patch.setProperty("name",name,nullptr);
         auto file=self->userSettings.getChildFile("Presets").getChildFile(juce::Uuid().toString()+".xml");
-        if(storeStudioFile(file,patch)) self->ratioTitle.setText(name,quiet);
+        if(storeStudioFile(file,patch)){self->ratioTitle.setText(name,quiet);self->saved("Performance saved: "+name,file);}
         else juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Preset not saved","Could not write the preset file.");
     }),true);
 }
 
+
+// The timer checks for edits frequently. Do not search a ValueTree by name
+// for every dial on every tick when the current snapshot has not changed.
+void MainComponent::indexCurrentHistory()
+{
+    currentHistoryValues.clear();
+    for(const auto& control:catalogue)
+        currentHistoryValues.push_back(double(history[historyIndex][control.id]));
+}
 
 void MainComponent::checkpoint()
 {
@@ -280,7 +345,8 @@ void MainComponent::checkpoint()
     if(historyIndex>=0) {
         const auto& last=history[historyIndex];
         if(last["name"].toString()==ratioTitle.getText() &&
-           std::all_of(catalogue.begin(),catalogue.end(),[&](const auto& s){return double(last[s.id])==s.read();})) return;
+           std::equal(catalogue.begin(),catalogue.end(),currentHistoryValues.begin(),currentHistoryValues.end(),
+                      [](const auto& control,double value){return control.read()==value;})) return;
     }
     auto state=captureStudio(catalogue);
     state.setProperty("name",ratioTitle.getText(),nullptr);
@@ -294,6 +360,7 @@ void MainComponent::checkpoint()
     history.resize(historyIndex+1); history.push_back(state);
     if(history.size()>100) history.erase(history.begin());
     historyIndex=int(history.size())-1;
+    indexCurrentHistory();
 }
 
 void MainComponent::travelHistory(int direction)
@@ -307,6 +374,18 @@ void MainComponent::travelHistory(int direction)
     auto name=history[next]["name"].toString();
     history[next]=captureStudio(catalogue); history[next].setProperty("name",name,nullptr);
     ratioTitle.setText(name,quiet);
+    indexCurrentHistory();
+}
+
+void MainComponent::resetPerformanceControls(const juce::StringArray& keys)
+{
+    StudioState reset("Reset");
+    for(const auto& key:keys)
+        if(factory.hasProperty(key)) reset.setProperty(key,factory[key],nullptr);
+    if(reset.getNumProperties()==0)return;
+    checkpoint();
+    recall(reset,false);
+    checkpoint();
 }
 
 void MainComponent::mouseDown(const juce::MouseEvent& e)
@@ -317,6 +396,20 @@ void MainComponent::mouseDown(const juce::MouseEvent& e)
     if(!slider) slider=c->findParentComponentOfClass<juce::Slider>();
     if(slider) lastSlider=slider;
     checkpoint();
+    auto* control=dynamic_cast<PerformanceSlider*>(slider);
+    if(!e.mods.isPopupMenu() || !control || control->resetKeys.isEmpty())return;
+    const auto keys=control->resetKeys, appearance=control->appearanceKeys;
+    auto label=juce::String("Reset to factory default");
+    for(const auto& spec:catalogue) if(spec.id==keys[0]){
+        const double initial=factory[spec.id];
+        label+=" ("+juce::String(initial,spec.step<1?2:0)+spec.unit+")";break;
+    }
+    juce::PopupMenu menu;menu.addItem(1,label);
+    if(!appearance.isEmpty())menu.addItem(2,"Reset all six appearance controls");
+    juce::Component::SafePointer<MainComponent> self(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withMousePosition(),[self,keys,appearance](int id){
+        if(self && id!=0)self->resetPerformanceControls(id==1?keys:appearance);
+    });
 }
 
 void MainComponent::warnRoll()
@@ -336,6 +429,7 @@ void MainComponent::warnRoll()
         if(skip->getToggleState()){
             StudioState pref("Preferences");pref.setProperty("warn",0,nullptr);
             self->warn=!storeStudioFile(self->userSettings.getChildFile("preferences.xml"),pref);
+            if(!self->warn)self->saved("Preferences saved",self->userSettings.getChildFile("preferences.xml"));
         }
         self->randomize(true);
     }),true);
@@ -389,7 +483,119 @@ void MainComponent::managePreset(juce::File file)
         if(id==2)patch=captureStudio(self->catalogue);
         patch.setProperty("name",name,nullptr);
         if(!storeStudioFile(file,patch))juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Preset not saved","Could not update the preset file.");
+        else self->saved("Performance updated: "+name,file);
     }),true);
+}
+
+void MainComponent::transferPreset(bool exporting,bool sequence)
+{
+    const juce::String kind=sequence?"video sequence":"performance";
+    auto snapshot=sequence ? video->sequence.createCopy() : captureStudio(catalogue);
+    if(!sequence) snapshot.setProperty("name",ratioTitle.getText(),nullptr);
+    snapshot.removeProperty("file",nullptr); // Library IDs are local to this installation.
+    auto start=juce::File::getSpecialLocation(juce::File::userDocumentsDirectory);
+    if(exporting) start=start.getChildFile(juce::File::createLegalFileName(snapshot["name"].toString())+".xml");
+    transferChooser=std::make_unique<juce::FileChooser>((exporting?"Export ":"Import ")+kind,start,"*.xml");
+    using Browser=juce::FileBrowserComponent;
+    auto chooserFlags=exporting ? Browser::saveMode|Browser::warnAboutOverwriting : Browser::openMode|Browser::canSelectFiles;
+    juce::Component::SafePointer<MainComponent> self(this);
+    transferChooser->launchAsync(chooserFlags,[self,exporting,sequence,snapshot,kind](const juce::FileChooser& chooser){
+        if(!self) return;
+        auto file=chooser.getResult();if(file==juce::File{})return;
+        auto fail=[](juce::String why){juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,
+                                                                             "Preset transfer",why);};
+        if(exporting){
+            if(storeStudioFile(file,snapshot))self->saved("Exported "+kind,file);else fail("Could not write the selected file.");
+            return;
+        }
+        auto imported=readStudioFile(file);
+        auto patch=sequence?imported.getChild(0):imported;
+        if((sequence && !imported.hasType("Sequence")) || !patch.hasType("Patch") || !patch.hasProperty("bpm")){
+            fail("Choose a PolyRhythm Pro "+kind+" XML file.");return;
+        }
+        auto numeric=[](const juce::var& v){
+            const auto str=v.toString().trim();
+            auto raw=str.toRawUTF8();char* end=nullptr;
+            const double number=std::strtod(raw,&end);
+            return end!=raw && *end==0 && std::isfinite(number);
+        };
+        for(const auto& setting:self->catalogue) if(patch.hasProperty(setting.id)){
+            if(!numeric(patch[setting.id])){fail("Invalid value for "+setting.label);return;}
+            patch.setProperty(setting.id,setting.snap(double(patch[setting.id])),nullptr);
+        }
+        if(sequence){
+            if(imported.hasProperty("openingPhase") && (!numeric(imported["openingPhase"]) ||
+               double(imported["openingPhase"])<0 || double(imported["openingPhase"])>1.e8)){
+                fail("Invalid sequence opening position.");return;
+            }
+            int previous=0;
+            for(int i=1;i<imported.getNumChildren();++i){
+                auto cue=imported.getChild(i);
+                const auto known=std::find_if(self->catalogue.begin(),self->catalogue.end(),
+                    [&](const auto& setting){return setting.id==cue["key"].toString();});
+                if(!cue.hasType("Cue") || known==self->catalogue.end() || !numeric(cue["value"])
+                   || !numeric(cue["frame"]) || !numeric(cue["length"])
+                   || double(cue["frame"])<previous || double(cue["frame"])>108000
+                   || double(cue["length"])<0 || double(cue["length"])>108000){
+                    fail("The sequence contains an invalid or unsupported cue.");return;
+                }
+                cue.setProperty("value",known->snap(double(cue["value"])),nullptr);
+                previous=int(cue["frame"]);
+            }
+        }
+        imported.removeProperty("file",nullptr);
+        if(imported["name"].toString().trim().isEmpty()) imported.setProperty("name",file.getFileNameWithoutExtension(),nullptr);
+        const auto filename=juce::Uuid().toString()+".xml";
+        if(!storeStudioFile(self->userSettings.getChildFile(sequence?"Sequences":"Presets").getChildFile(filename),imported)){
+            fail("Could not add the preset to your library.");return;
+        }
+        self->saved("Imported "+kind,self->userSettings.getChildFile(sequence?"Sequences":"Presets").getChildFile(filename));
+        if(sequence){
+            self->populateVideos();
+            for(size_t i=0;i<self->sequences.size();++i) if(self->sequences[i]["file"].toString()==filename)
+                self->video->library.setSelectedId(int(i)+1,juce::sendNotificationSync);
+        }else{
+            self->recall(imported,true);
+            self->ratioTitle.setText(imported["name"].toString(),quiet);
+        }
+    });
+}
+
+void MainComponent::addAppearanceMenu(juce::PopupMenu& view)
+{
+    juce::PopupMenu menu;
+    const auto appearance=GlassTheme::current().settings();
+    juce::Component::SafePointer<MainComponent> self(this);
+    const auto addChoices=[&](juce::PopupMenu& parent, const juce::String& title,
+                              const juce::StringArray& choices, int Appearance::*field)
+    {
+        juce::PopupMenu options;
+        for(int i=0;i<choices.size();++i)
+            options.addItem(choices[i],true,appearance.*field==i,[self,field,i] {
+                if(!self) return;
+                auto next=GlassTheme::current().settings();
+                next.*field=i;
+                self->saveAppearance(next);
+            });
+        parent.addSubMenu(title,options);
+    };
+    addChoices(menu,"Color theme",GlassTheme::paletteNames,&Appearance::palette);
+    juce::PopupMenu custom, fonts;
+    for(const auto& family:GlassTheme::fonts())
+        fonts.addItem(family,true,appearance.font==family,[self,family] {
+            if(!self) return;
+            auto next=GlassTheme::current().settings();
+            next.font=family;
+            self->saveAppearance(next);
+        });
+    custom.addSubMenu("Font",fonts);
+    addChoices(custom,"Roundness",GlassTheme::cornerNames,&Appearance::corners);
+    addChoices(custom,"Borders",GlassTheme::borderNames,&Appearance::borders);
+    addChoices(custom,"Drop-down style",GlassTheme::dropdownNames,&Appearance::dropdown);
+    menu.addSubMenu("Customize",custom);
+    menu.addSeparator();
+    menu.addItem("Reset appearance", [self] { if(self) self->saveAppearance({}); });
+    view.addSubMenu("Appearance",menu);
 }
 
 void MainComponent::menuFor(int index)
@@ -397,7 +603,12 @@ void MainComponent::menuFor(int index)
     checkpoint();
     juce::PopupMenu menu;
     juce::Array<juce::File> files;
+    auto shortcut=[this](int command){
+        auto keys=commands.getKeyMappings()->getKeyPressesAssignedToCommand(command);
+        return keys.isEmpty()?juce::String{}:"    "+keys.getFirst().getTextDescription();
+    };
     if(index==0){
+        menu.addItem(62,"Import performance preset..."); menu.addItem(63,"Export current performance...");
         menu.addItem(1,"Load performance..."); menu.addItem(2,"Save current performance...");
         juce::PopupMenu edit;
         for(auto file:userSettings.getChildFile("Presets").findChildFiles(juce::File::findFiles,false,"*.xml")){
@@ -406,10 +617,13 @@ void MainComponent::menuFor(int index)
         }
         menu.addSubMenu("Manage saved presets",edit,!files.isEmpty());
     } else if(index==1){
-        menu.addItem(3,"Undo    Ctrl+Z",historyIndex>0); menu.addItem(4,"Redo    Ctrl+Y",historyIndex+1<int(history.size()));
+        menu.addItem(3,"Undo"+shortcut(producerUI::undoEdit),historyIndex>0); menu.addItem(4,"Redo"+shortcut(producerUI::redoEdit),historyIndex+1<int(history.size()));
     } else if(index==2){
-        menu.addItem(5,"Full screen    F11",true,juce::Desktop::getInstance().getKioskModeComponent()!=nullptr);
+        addAppearanceMenu(menu);
+        menu.addSeparator();
+        menu.addItem(5,"Full screen"+shortcut(producerUI::fullScreen),true,juce::Desktop::getInstance().getKioskModeComponent()!=nullptr);
         menu.addItem(6,"Note track",true,scene.showForecast);
+        menu.addItem(64,"Show sync threads",true,scene.showSyncThreads);
         menu.addItem(10,"Reset panel sizes");
         menu.addItem(17,"Equal-speed nodes",true,scene.equalSpeed);
         menu.addItem(18,"Auto-balance paths",true,scene.autoBalance);
@@ -429,6 +643,7 @@ void MainComponent::menuFor(int index)
         menu.addSubMenu("Note track height",sizes);
         menu.addItem(7,"Save startup defaults...");menu.addItem(8,"Load defaults",defaults.getNumProperties()>0);
         menu.addItem(9,"Warn before randomizing",true,warn);
+        menu.addItem(65,"Keyboard shortcuts...");
         menu.addItem(61,"Open diagnostics folder");
         menu.addItem(60,"Use preset as startup defaults...");
     }
@@ -437,10 +652,13 @@ void MainComponent::menuFor(int index)
         if(!self)return;
         if(id>=101){self->managePreset(files[id-101]);return;}
         if(id>=12 && id<=15){self->scene.trackHeight=float(48+40*(id-12));self->scene.repaint();return;}
+        if(id==62 || id==63){self->transferPreset(id==63,false);return;}
         if(id==61){
             juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
                 .getChildFile("PolyRhythm Pro/Diagnostics").startAsProcess();return;
         }
+        if(id==64){self->scene.showSyncThreads=!self->scene.showSyncThreads;self->inspector.syncControls();self->scene.repaint();return;}
+        if(id==65){self->showShortcuts();return;}
         if(id==60){self->chooseStartupPreset();return;}
         if(id>=20){if(auto* peer=self->getPeer())peer->setCurrentRenderingEngine(id-20);return;}
         switch(id){
@@ -453,7 +671,7 @@ void MainComponent::menuFor(int index)
         case 7:self->showSettings(true);break;
         case 8:self->recall(self->defaults,false);break;
         case 9:{StudioState pref("Preferences");pref.setProperty("warn",int(!self->warn),nullptr);
-                if(storeStudioFile(self->userSettings.getChildFile("preferences.xml"),pref))self->warn=!self->warn;break;}
+                if(storeStudioFile(self->userSettings.getChildFile("preferences.xml"),pref)){self->warn=!self->warn;self->saved("Preferences saved",self->userSettings.getChildFile("preferences.xml"));}break;}
         case 10:self->sideWidth=374;self->dockHeight=166;self->resized();self->repaint();break;
         case 11:self->scene.showFps=!self->scene.showFps;self->scene.repaint();break;
         case 17:self->scene.equalSpeed=!self->scene.equalSpeed;self->inspector.syncControls();self->scene.repaint();break;

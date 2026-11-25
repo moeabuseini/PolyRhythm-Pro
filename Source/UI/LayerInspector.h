@@ -1,22 +1,24 @@
 #pragma once
-#include "TransportAudioEngine.h"
-#include "RhythmScene.h"
+#include "../Audio/TransportAudioEngine.h"
+#include "../Stage/RhythmScene.h"
 #include "SceneControls.h"
 #include "VoicingPanel.h"
 #include "GlassTheme.h"
+#include "../Producer/ProducerPanel.h"
 
 class InspectorTab final : public juce::Button
 {
   public:
     InspectorTab() : Button("") {}
     int index = 0;
-    void paintButton(juce::Graphics &g, bool hover, bool) override
+    void paintButton(juce::Graphics &g, bool hover, bool down) override
     {
         const float x = getWidth() * 0.5f, y = 13;
-        auto ink = getToggleState() ? juce::Colour(0xffb8e2ff) : juce::Colour(0xff96a5be);
-        GlassTheme::surface(g,getLocalBounds().toFloat().reduced(2,2),
-                            getToggleState() ? juce::Colour(0xff3f656e) : juce::Colour(0xff263246),hover,false);
-        g.setColour(ink);
+        const auto& theme=GlassTheme::current();
+        const auto& p=theme.colours();
+        theme.surface(g,getLocalBounds().toFloat().reduced(2,2),
+                      getToggleState() ? p.selected() : p.control,hover,down,false,hasKeyboardFocus(true));
+        g.setColour(getToggleState() ? p.text() : p.muted());
         if (index == 0)
         {
             g.fillEllipse(x - 6, y + 2, 6, 4);
@@ -47,7 +49,7 @@ class InspectorTab final : public juce::Button
             g.drawEllipse(x - 6, y - 6, 12, 12, 1);
             g.drawLine(x - 9, y + 4, x + 8, y - 3, 1.5f);
         }
-        g.setFont(juce::FontOptions(12.f));
+        g.setFont(theme.font(12.f));
         g.drawText(getName(), 0, 21, getWidth(), 18, juce::Justification::centred);
     }
 };
@@ -59,13 +61,14 @@ class LayerInspector final : public juce::Component
         using namespace studio;
         addChildComponent(sceneControls);
         addChildComponent(voicing);
-        for (int i = 0; i < 3; ++i)
+        addChildComponent(producerPanel);
+        for (int i = 0; i < 4; ++i)
         {
             auto &mode = modes[i];
-            mode.index = i == 0 ? 0 : i==1 ? 4 : 3;
-            mode.setName(i == 0 ? "Music" : i==1 ? "Environment" : "Nodes");
+            mode.index = i == 0 ? 0 : i==1 ? 4 : i==2 ? 3 : 1;
+            mode.setName(i == 0 ? "Music" : i==1 ? "Environment" : i==2 ? "Nodes" : "Producer");
             mode.setRadioGroupId(2);
-            mode.onClick = [this, i] { selectPage(i == 0 ? 0 : i==1 ? 4 : 7); };
+            mode.onClick = [this, i] { selectPage(i == 0 ? 0 : i==1 ? 4 : i==2 ? 7 : 9); };
             addAndMakeVisible(mode);
         }
         for (int i = 0; i < layerCount; ++i)
@@ -73,10 +76,7 @@ class LayerInspector final : public juce::Component
         for (int i = 0; i < static_cast<int>(sounds.size()); ++i)
             soundBox.addItem(sounds[i], i + 1);
         for (auto *box : {&layerBox, &soundBox})
-        {
-            box->setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff242a3f));
             addAndMakeVisible(*box);
-        }
         layerBox.setTitle("Layer");
         soundBox.setTitle("Instrument");
         layerBox.setSelectedId(1, juce::dontSendNotification);
@@ -117,7 +117,6 @@ class LayerInspector final : public juce::Component
             knob.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
             knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 82, 19);
             knob.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-            knob.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour(0xff31384b));
             knob.onValueChange = [this, i] { changed(i); };
             labels[i].setJustificationType(juce::Justification::centred);
             addAndMakeVisible(knob);
@@ -144,6 +143,9 @@ class LayerInspector final : public juce::Component
         refresh();
         resized();
     }
+    producerUI::Panel producerPanel;
+    void inspectPitch(int l){layerBox.setSelectedId(l+1,juce::dontSendNotification);selectPage(8);}
+    void syncTempo(double bpm){sceneControls.syncTempo(bpm);}
     void linkTempo(juce::Slider& master){sceneControls.linkTempo(master);}
     void noteHit(const studio::Hit& hit) { if(page==8) voicing.strike(hit); }
     void refreshPitchMap() { if(page==8) voicing.repaint(); }
@@ -151,9 +153,12 @@ class LayerInspector final : public juce::Component
     void resized() override
     {
         auto b = getLocalBounds().reduced(12, 8);
-        auto top = b.removeFromTop(41);
-        int modeWidth=top.getWidth()/3;
-        for(auto& mode:modes) mode.setBounds(top.removeFromLeft(modeWidth));
+        for(int row=0;row<2;++row){
+            auto top=b.removeFromTop(41);
+            modes[row*2].setBounds(top.removeFromLeft(top.getWidth()/2));
+            modes[row*2+1].setBounds(top);
+        }
+        if(page==9){producerPanel.setBounds(b.reduced(0,5));return;}
         auto selectors = b.removeFromTop(section(page)==0 ? 30 : 0);
         layerBox.setBounds(
             selectors
@@ -192,7 +197,7 @@ class LayerInspector final : public juce::Component
     }
 
   private:
-    static int section(int tab) { return tab==7 ? 2 : (tab==4 || tab==6) ? 1 : 0; }
+    static int section(int tab) { return tab==9 ? 3 : tab==7 ? 2 : (tab==4 || tab==6) ? 1 : 0; }
     studio::Strip &strip() { return engine.strips[layerBox.getSelectedId() - 1]; }
     enum
     {
@@ -232,6 +237,7 @@ class LayerInspector final : public juce::Component
     {
         syncing = true;
         modes[section(page)].setToggleState(true, juce::dontSendNotification);
+        producerPanel.setVisible(page==9);
         voicing.setVisible(page==8);
         if(page==8) voicing.selectLayer(layerBox.getSelectedId()-1);
         sceneControls.setVisible(page==6 || page==7);
@@ -243,6 +249,8 @@ class LayerInspector final : public juce::Component
         ambience.setVisible(page == 5);
         twinkleLabel.setVisible(page == 4);
         twinkle.setVisible(page == 4);
+        const auto skyPrefix="sky"+juce::String(scene.activeEnvironment())+"_look";
+        twinkle.resetKeys={skyPrefix+"6"};
         twinkle.setValue(scene.settings()[RhythmScene::twinkleSetting], juce::dontSendNotification);
         const studio::Dial sky[]{{"Sky hue", 0, 359, 1, 225, " deg"},
                                  {"Stars", 0, RhythmScene::maxStars, 1, 720, ""},
@@ -251,7 +259,7 @@ class LayerInspector final : public juce::Component
                                  {scene.details[scene.activeEnvironment()][0], 0, 100, 1, 50, "%"},
                                  {scene.details[scene.activeEnvironment()][1], 0, 100, 1, 50, "%"}};
         soundBox.setSelectedId(strip().sound.load() + 1, juce::dontSendNotification);
-        tabs[page].setToggleState(true, juce::dontSendNotification);
+        if(page<int(tabs.size())) tabs[page].setToggleState(true, juce::dontSendNotification);
         for (int i = 0; i < 6; ++i)
         {
             int id = page>=6 ? -1 : pages[page][i];
@@ -263,6 +271,8 @@ class LayerInspector final : public juce::Component
             const auto &d = id < hue ? studio::dials[id] : sky[id - hue];
             labels[i].setText(d.name, juce::dontSendNotification);
             knob.setTitle(d.name);
+            knob.resetKeys={id<hue ? "layer"+juce::String(layerBox.getSelectedId()-1)+"_dial"+juce::String(id)
+                                   : skyPrefix+juce::String(id-hue)};
             knob.setSliderStyle(page == 4 ? juce::Slider::LinearHorizontal
                                           : juce::Slider::RotaryHorizontalVerticalDrag);
             knob.setRange(d.min, d.max, d.step);
@@ -279,11 +289,11 @@ class LayerInspector final : public juce::Component
     juce::ComboBox layerBox, soundBox, ambience;
     SceneControls sceneControls{engine,scene};
     VoicingPanel voicing{engine};
-    std::array<InspectorTab, 3> modes;
+    std::array<InspectorTab, 4> modes;
     std::array<InspectorTab, 9> tabs;
     std::array<juce::Label, 6> labels;
-    std::array<juce::Slider, 6> knobs;
-    juce::Slider twinkle;
+    std::array<PerformanceSlider, 6> knobs;
+    PerformanceSlider twinkle;
     juce::Label twinkleLabel;
     int page = 0;
     bool syncing = false;

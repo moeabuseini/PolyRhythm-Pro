@@ -8,18 +8,14 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
     setOpaque(true);
 
     styleLabel(title, "POLYRHYTHM", 12.0f, true);
-    title.setColour(juce::Label::textColourId, accentA);
     styleLabel(subtitle, "PRO", 12.0f, true);
-    subtitle.setColour(juce::Label::textColourId, textMuted);
     styleLabel(ratioTitle, "Nocturne Atlas", 27.0f);
     styleLabel(explanation, "Even current   /   D Dorian   /   3 melody pulses : 2 bass pulses", 14.0f, true);
     styleLabel(status, "READY TO PLAY", 11.0f, true);
     styleLabel(tempoLabel, "TEMPO · BASS", 10.0f, true);
     styleLabel(bpmValue, "96 BPM", 17.0f);
     styleLabel(voiceALabel, "MELODY", 10.0f, true);
-    voiceALabel.setColour(juce::Label::textColourId, accentA);
     styleLabel(voiceBLabel, "BASS", 10.0f, true);
-    voiceBLabel.setColour(juce::Label::textColourId, accentB);
     styleLabel(presetLabel, "START WITH A PATTERN", 10.0f, true);
     styleLabel(cycleLabel, "CYCLE 01  ·  00:00", 11.0f, true);
     styleLabel(volumeLabel, "MASTER LEVEL", 10.0f, true);
@@ -35,10 +31,6 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
     const auto styleCombo = [this] (juce::ComboBox& combo)
     {
         combo.setScrollWheelEnabled(true);
-        combo.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xff202b36));
-        combo.setColour(juce::ComboBox::textColourId, textPrimary);
-        combo.setColour(juce::ComboBox::outlineColourId, juce::Colour(0xff34424e));
-        combo.setColour(juce::ComboBox::arrowColourId, textMuted);
         addAndMakeVisible(combo);
     };
     styleCombo(voiceABox);
@@ -47,9 +39,9 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
     presetBox.setTextWhenNothingSelected("Custom");
     styleCombo(targetBox); styleCombo(meetingBox);
     targetBox.setTitle("Convergence target");
-    targetBox.addItemList({"Convergence line","Convergence point"},1);
+    targetBox.addItemList(RhythmScene::formationNames,1);
     targetBox.setSelectedId(1,juce::dontSendNotification);
-    targetBox.onChange=[this]{ scene.setPointTarget(targetBox.getSelectedId()==2); inspector.syncControls(); };
+    targetBox.onChange=[this]{ scene.selectFormation(targetBox.getSelectedId()-1); inspector.syncControls(); };
     meetingBox.setTitle("Skip destination");
     meetingBox.addItemList({"Every point","Layer attacks"},1);
     meetingBox.setSelectedId(1,juce::dontSendNotification);
@@ -60,22 +52,23 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
     }
     styleCombo(environmentBox);
     environmentBox.setTitle("Visual environment");
-    environmentBox.addItemList({"Eclipse Garden","Aurora Loom","Lunar Tide"},1);
+    environmentBox.addItemList(RhythmScene::environmentNames,1);
     environmentBox.setSelectedId(1,juce::dontSendNotification);
     environmentBox.onChange=[this]{ scene.setEnvironment(environmentBox.getSelectedId()-1); inspector.selectPage(4); };
     voiceABox.setSelectedId(3, juce::dontSendNotification);
     voiceBBox.setSelectedId(2, juce::dontSendNotification);
     presetBox.setSelectedId(1, juce::dontSendNotification);
 
-    styleSlider(tempoSlider, accentB);
+    tempoSlider.resetKeys={"bpm"};volumeSlider.resetKeys={"level"};transposeSlider.resetKeys={"transpose"};
+    styleSlider(tempoSlider);
     tempoSlider.setRange(1.0, 180.0, 1.0);
     tempoSlider.setValue(96.0, juce::dontSendNotification);
     tempoSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    styleSlider(volumeSlider, accentA);
+    styleSlider(volumeSlider);
     volumeSlider.setRange(0.0, 1.0, 0.01);
     volumeSlider.setValue(0.65, juce::dontSendNotification);
     volumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-    styleSlider(transposeSlider, accentA);
+    styleSlider(transposeSlider);
     transposeSlider.setTitle("Master pitch (all layers)");
     transposeSlider.setRange(-12, 12, 1);
     transposeSlider.setValue(engine.masterTranspose.load(), juce::dontSendNotification);
@@ -86,7 +79,7 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
         engine.masterTranspose = static_cast<int>(transposeSlider.getValue());
         updatePatternFromControls();
     };
-    configureButton(playButton, true);
+    configureButton(playButton);
     configureButton(resetButton);
     scene.setOpaque(true);
     addAndMakeVisible(scene);
@@ -100,7 +93,6 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
     presets.onClick=[this]{ showPresets(); };
     fullscreen.onClick=[this]{ toggleFullscreen(); };
     track.setClickingTogglesState(true);
-    track.setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xff386768));
     track.setToggleState(true,juce::dontSendNotification);
     track.onClick=[this]{ scene.showForecast=track.getToggleState(); scene.repaint(); };
     rollAll.onClick=[this]{ warnRoll(); };
@@ -110,6 +102,13 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
     const char* menuNames[]{"File","Edit","View","Settings"};
     for(int i=0;i<4;++i){configureButton(menus[i]); menus[i].setButtonText(menuNames[i]); menus[i].onClick=[this,i]{menuFor(i);};}
     configureButton(variation);
+    scene.setWantsKeyboardFocus(true);
+    configureButton(producer);
+    producer.onClick=[this]{inspector.selectPage(9);inspectorView.setViewPosition(0,0);};
+    initProducer();
+    scene.receiptOverlay=&receipt;
+    scene.predictPitch=[this](int l,int n,double pos){return engine.nextNodePitch(l,n,pos);};
+    scene.onAudition=[this](int l,int midi){engine.audition(l,midi);inspector.inspectPitch(l);};
     configureButton(createVideo);createVideo.onClick=[this]{openVideo();};
     variation.onClick = [this] { generateRhythm(); };
     for(auto* button:{&back,&forward,&align}) configureButton(*button);
@@ -177,6 +176,14 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
     checkpoint();
     addMouseListener(this,true);
     warn=int(readStudioFile(userSettings.getChildFile("preferences.xml")).getProperty("warn",1))!=0;
+    const auto appearance=readStudioFile(userSettings.getChildFile("appearance.xml"));
+    applyAppearance({
+        juce::jlimit(0,GlassTheme::paletteNames.size()-1,int(appearance.getProperty("palette",0))),
+        appearance.getProperty("font","Bahnschrift").toString(),
+        juce::jlimit(0,GlassTheme::cornerNames.size()-1,int(appearance.getProperty("corners",2))),
+        juce::jlimit(0,GlassTheme::borderNames.size()-1,int(appearance.getProperty("borders",1))),
+        juce::jlimit(0,GlassTheme::dropdownNames.size()-1,int(appearance.getProperty("dropdown",0)))
+    });
     resized();
 
     const auto deviceError = audioDeviceManager.initialise(0, 2, nullptr, true);
@@ -210,6 +217,7 @@ MainComponent::MainComponent(juce::File settingsFolder) : userSettings(std::move
 MainComponent::~MainComponent()
 {
     stopTimer();
+    renderPool.removeAllJobs(true,-1);
     displaySync.reset();
     removeMouseListener(this);
     inspectorView.setViewedComponent(nullptr,false);
@@ -220,24 +228,49 @@ MainComponent::~MainComponent()
     audioSourcePlayer.errorHandler = {};
 }
 
-void MainComponent::configureButton(juce::TextButton& button, bool primary)
+void MainComponent::applyAppearance(const Appearance& appearance)
 {
-    button.setColour(juce::TextButton::buttonColourId, primary ? accentA : juce::Colour(0xff202b36));
-    button.setColour(juce::TextButton::buttonOnColourId, primary ? accentA.brighter(0.1f) : panel.brighter(0.15f));
-    button.setColour(juce::TextButton::textColourOffId, primary ? juce::Colour(0xff0c1719) : textPrimary);
-    button.setColour(juce::TextButton::textColourOnId, primary ? juce::Colour(0xff0c1719) : textPrimary);
+    auto& theme=GlassTheme::current();
+    theme.apply(appearance);
+    const auto& p=theme.colours();
+    for(auto* label:{&subtitle,&explanation,&status,&tempoLabel,&presetLabel,&cycleLabel,&volumeLabel,&transposeLabel})
+        label->setColour(juce::Label::textColourId,p.muted());
+    title.setColour(juce::Label::textColourId,p.accent);
+    voiceALabel.setColour(juce::Label::textColourId,p.accent);
+    voiceBLabel.setColour(juce::Label::textColourId,p.secondary);
+    playButton.setColour(juce::TextButton::buttonColourId,p.accent);
+    playButton.setColour(juce::TextButton::textColourOffId,p.accentInk());
+    tempoSlider.setColour(juce::Slider::thumbColourId,p.secondary);
+    if(auto* window=findParentComponentOfClass<juce::ResizableWindow>())
+        window->setBackgroundColour(p.background);
+    sendLookAndFeelChange();
+}
+
+void MainComponent::saveAppearance(const Appearance& appearance)
+{
+    StudioState state("Appearance");
+    state.setProperty("palette",appearance.palette,nullptr);
+    state.setProperty("font",appearance.font,nullptr);
+    state.setProperty("corners",appearance.corners,nullptr);
+    state.setProperty("borders",appearance.borders,nullptr);
+    state.setProperty("dropdown",appearance.dropdown,nullptr);
+    if(storeStudioFile(userSettings.getChildFile("appearance.xml"),state))
+        applyAppearance(appearance);
+    else
+        juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon,"Appearance",
+                                              "Could not save the appearance settings.",{},this);
+}
+
+void MainComponent::configureButton(juce::TextButton& button)
+{
     button.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     button.setClickingTogglesState(false);
     addAndMakeVisible(button);
 }
 
-void MainComponent::styleSlider(juce::Slider& slider, const juce::Colour& accent)
+void MainComponent::styleSlider(juce::Slider& slider)
 {
     slider.setSliderStyle(juce::Slider::LinearHorizontal);
-    slider.setColour(juce::Slider::trackColourId, juce::Colour(0xff33414d));
-    slider.setColour(juce::Slider::thumbColourId, accent);
-    slider.setColour(juce::Slider::backgroundColourId, juce::Colour(0xff202b36));
-    slider.setColour(juce::Slider::rotarySliderFillColourId, accent);
     addAndMakeVisible(slider);
 }
 
@@ -245,43 +278,43 @@ void MainComponent::styleLabel(juce::Label& label, const juce::String& content, 
 {
     label.setText(content, juce::dontSendNotification);
     label.setFont(juce::FontOptions(size, mutedText ? juce::Font::bold : juce::Font::plain));
-    label.setColour(juce::Label::textColourId, mutedText ? textMuted : textPrimary);
     label.setJustificationType(juce::Justification::centredLeft);
 }
 
 void MainComponent::paintCard(juce::Graphics& g, juce::Rectangle<int> bounds, juce::Colour fill)
 {
-    auto box = bounds.toFloat();
+    const auto box=bounds.toFloat();
+    const auto& theme=GlassTheme::current();
     g.setColour(juce::Colour(0x12000000));
-    g.fillRoundedRectangle(box.translated(0.0f, 5.0f), 16.0f);
-    g.setGradientFill({fill.brighter(0.30f).withAlpha(0.76f),box.getTopLeft(),
-                       fill.withAlpha(0.65f),box.getBottomRight(),false});
-    g.fillRoundedRectangle(box, 16.0f);
-    g.setGradientFill({juce::Colour(0x548eadba),box.getTopLeft(),juce::Colour(0x225d7089),box.getBottomRight(),false});
-    g.drawRoundedRectangle(box, 16.0f, 1.0f);
+    g.fillRoundedRectangle(box.translated(0.f,5.f),theme.radius(box));
+    g.setGradientFill({fill.brighter(0.2f),box.getTopLeft(),fill,box.getBottomRight(),false});
+    g.fillRoundedRectangle(box,theme.radius(box));
+    theme.outline(g,box);
 }
 
 void MainComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(background);
+    const auto& theme=GlassTheme::current();
+    const auto& p=theme.colours();
+    g.fillAll(p.background);
     auto bg = getLocalBounds().toFloat();
-    juce::ColourGradient gradient(juce::Colour(0xff17212b), 0.0f, 0.0f,
-                                  background, bg.getWidth() * 0.8f, bg.getHeight(), true);
+    juce::ColourGradient gradient(p.panel, 0.0f, 0.0f,
+                                  p.background, bg.getWidth() * 0.8f, bg.getHeight(), true);
     g.setGradientFill(gradient);
     g.fillRect(bg);
 
     const auto w=getWidth(), dockY=getHeight()-18-dockHeight;
     const int right=w-18-sideWidth;
     const int panelW=w-36, first=panelW*35/100, second=panelW*29/100;
-    g.setGradientFill({juce::Colour(0x44437685),0.f,0.f,juce::Colour(0x001d263a),w*0.7f,getHeight()*0.85f,true});
+    g.setGradientFill({p.accent.withAlpha(0.12f),0.f,0.f,p.accent.withAlpha(0.f),w*0.7f,getHeight()*0.85f,true});
     g.fillRect(bg);
-    paintCard(g,{18,104,right-30,dockY-118},juce::Colour(0xff172a36));
-    paintCard(g,{right,104,sideWidth,dockY-118},juce::Colour(0xff24263b));
-    paintCard(g,{18,dockY,first-6,dockHeight});
-    paintCard(g,{18+first,dockY,second-6,dockHeight});
-    paintCard(g,{18+first+second,dockY,panelW-first-second,dockHeight},juce::Colour(0xff263141));
+    paintCard(g,{18,104,right-30,dockY-118},p.panel.interpolatedWith(p.control,0.2f));
+    paintCard(g,{right,104,sideWidth,dockY-118},p.panel.interpolatedWith(p.menu,0.5f));
+    paintCard(g,{18,dockY,first-6,dockHeight},p.panel);
+    paintCard(g,{18+first,dockY,second-6,dockHeight},p.panel);
+    paintCard(g,{18+first+second,dockY,panelW-first-second,dockHeight},p.panel.interpolatedWith(p.control,0.35f));
     // Two intersecting orbits mark the instrument without competing with the stage.
-    g.setColour(accentA.withAlpha(0.85f));
+    g.setColour(p.accent.withAlpha(0.85f));
     g.drawEllipse(25,16,17,13,1.3f); g.drawEllipse(32,16,17,13,1.3f);
     g.fillEllipse(38,15,4,4);
 
@@ -291,7 +324,7 @@ void MainComponent::paint(juce::Graphics& g)
         g.setColour(juce::Colour(0xff381f20));
         g.fillRoundedRectangle(28.0f, getHeight() - 24.0f, getWidth() - 56.0f, 18.0f, 6.0f);
         g.setColour(juce::Colour(0xffffb2a8));
-        g.setFont(juce::FontOptions(10.0f));
+        g.setFont(theme.font(10.f));
         g.drawFittedText("Audio output unavailable. Check Windows sound settings and restart the app. " + audioError,
                          40, getHeight() - 23, getWidth() - 80, 16, juce::Justification::centredLeft, 1);
     }
@@ -301,6 +334,7 @@ void MainComponent::resized()
 {
     const int w=getWidth(), h=getHeight();
     if(w<400 || h<300) return;
+    placeReceipt();
     if(video)video->setBounds(getLocalBounds());
     if(filming){scene.setBounds(getLocalBounds());return;}
     sideWidth=juce::jlimit(340,juce::jmax(340,w/2),sideWidth);
@@ -314,6 +348,7 @@ void MainComponent::resized()
     forward.setBounds(bar.removeFromLeft(68)); align.setBounds(bar.removeFromLeft(154)); resetButton.setBounds(bar);
     presets.setBounds(w-736,16,105,34); fullscreen.setBounds(w-626,16,111,34);
     for(int i=0;i<4;++i) menus[i].setBounds(182+i*60,8,59,27);
+    producer.setBounds(w-303,61,95,31);
     cycleLabel.setBounds(w-498,64,191,24); meetingBox.setBounds(w-202,60,180,34);
     auto stageTools=juce::Rectangle<int>(26,110,right-50,33);
     createVideo.setBounds(stageTools.removeFromRight(110));
@@ -323,7 +358,7 @@ void MainComponent::resized()
     sideGrip.setBounds(right-12,104,12,dockY-118);
     bottomGrip.setBounds(18,dockY-14,w-36,14);
     inspectorView.setBounds(right+4,108,sideWidth-8,dockY-126);
-    const int inspectorHeight=juce::jmax(470,inspectorView.getHeight());
+    const int inspectorHeight=juce::jmax(721,inspectorView.getHeight());
     inspector.setSize(inspectorView.getWidth()-(inspectorHeight>inspectorView.getHeight()?inspectorView.getScrollBarThickness():0),inspectorHeight);
     const int panelW=w-36, first=panelW*35/100, second=panelW*29/100;
     auto mix=juce::Rectangle<int>(30,dockY+10,first-30,dockHeight-20);
@@ -358,17 +393,27 @@ void MainComponent::toggleFullscreen()
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
 {
+    auto* focus=juce::Component::getCurrentlyFocusedComponent();
+    if(dynamic_cast<juce::TextEditor*>(focus) || (focus && focus->findParentComponentOfClass<juce::TextEditor>()))return false;
+    const int id=commands.getKeyMappings()->findCommandForKeyPress(key);
+    if(id==producerUI::holdExposure && (!video || !video->isVisible())){
+        if(!heldExposureKey){heldExposureKey=key.getKeyCode();scene.beginExposure();}
+        return true;
+    }
+    if(id && !isCurrentlyBlockedByAnotherModalComponent() && !filming){
+        if(lastShortcutKey!=key.getKeyCode() && actionEnabled(id)){lastShortcutKey=key.getKeyCode();producerAction(id);}
+        return true;
+    }
+    if(filming && id==producerUI::catchMeeting){catchMidi(1);return true;}
     if(filming){
         if(key==juce::KeyPress::escapeKey)finishVideo();
         else if(key==juce::KeyPress::spaceKey)engine.setPlaying(!engine.isPlaying());
         return true;
     }
-    if(key.getModifiers().isCtrlDown() && key.getKeyCode()=='Z'){travelHistory(key.getModifiers().isShiftDown()?1:-1);return true;}
-    if(key.getModifiers().isCtrlDown() && key.getKeyCode()=='Y'){travelHistory(1);return true;}
     if(lastSlider && lastSlider->isShowing() && lastSlider->isEnabled() && (key==juce::KeyPress::leftKey || key==juce::KeyPress::rightKey)){
         lastSlider->setValue(lastSlider->getValue()+(key==juce::KeyPress::leftKey?-1:1)*lastSlider->getInterval(),juce::sendNotificationSync);return true;
     }
-    if(key==juce::KeyPress::F11Key || (key==juce::KeyPress::escapeKey && juce::Desktop::getInstance().getKioskModeComponent()!=nullptr)) {
+    if(key==juce::KeyPress::escapeKey && juce::Desktop::getInstance().getKioskModeComponent()!=nullptr) {
         toggleFullscreen(); return true;
     }
     return false;
@@ -403,17 +448,21 @@ void MainComponent::updatePatternFromControls()
     pattern.voiceA = juce::jlimit(2, 9, voiceABox.getSelectedId());
     pattern.voiceB = juce::jlimit(2, 9, voiceBBox.getSelectedId());
     pattern.bpm = tempoSlider.getValue();
+    inspector.syncTempo(pattern.bpm);
     engine.setPattern(pattern.voiceA, pattern.voiceB, pattern.bpm);
     scene.setPattern(pattern);
     const auto tonic = juce::MidiMessage::getMidiNoteName(62 + engine.masterTranspose.load(), true, false, 4);
     explanation.setText(juce::String(studio::BeatGrid::grooves[studio::BeatGrid::groove(engine.seed.load())]) + "   /   " + tonic + " Dorian   /   " + juce::String(pattern.voiceA) + " melody pulses : "
                         + juce::String(pattern.voiceB) + " bass pulses", juce::dontSendNotification);
+    if(engine.roadmap)explanation.setText("Chord roadmap   /   Two cycles per chord",juce::dontSendNotification);
     bpmValue.setText(juce::String(static_cast<int>(std::round(pattern.bpm))) + " BPM", juce::dontSendNotification);
     repaint();
 }
 
 void MainComponent::jumpTo(double cycles)
 {
+    if(gesture.isValid())finishGesture();
+    cancelFan();
     displayHits.clear();
     const juce::ScopedLock callbackLock(audioDeviceManager.getAudioCallbackLock());
     studio::Hit stale {};
@@ -443,12 +492,16 @@ void MainComponent::generateRhythm()
 
 void MainComponent::timerCallback()
 {
+    if(gesture.isValid()) sampleGesture();
     if(!filming && !juce::ModifierKeys::getCurrentModifiersRealtime().isAnyMouseButtonDown()) checkpoint();
     const bool full=juce::Desktop::getInstance().getKioskModeComponent()==getTopLevelComponent();
     const juce::String fullText=full ? "Exit full screen" : "Full screen";
     if(fullscreen.getButtonText()!=fullText) fullscreen.setButtonText(fullText);
     if(isShowing() && (!engine.isPlaying() || juce::Time::getMillisecondCounterHiRes()-lastVblankMs>150))
         animateStage();
+    if(heldExposureKey || lastShortcutKey)keyStateChanged(false);
+    if(inspector.producerPanel.isShowing())refreshProducer();
+    if(receipt.isVisible())placeReceipt();
     inspector.refreshPitchMap();
     syncTransportLabel();
 }
@@ -463,9 +516,24 @@ void MainComponent::animateStage()
         if(h.time>clock.seconds && engine.isPlaying())return false;
         scene.strike(h);inspector.noteHit(h);reunion |= h.fullReunion;return true;
     }),displayHits.end());
-    if(filming)updateVideo(clock.seconds,reunion);
+    if(!fanCue)cancelFan();
+    if(reunion && fanCue && fanLastCycle<0){fanLastCycle=clock.cycles;fanBeats=0;}
+    if(fanLastCycle>=0){
+        // Measure beats, not milliseconds: pause and tempo automation stay in sync.
+        fanBeats+=std::max(0.,clock.cycles-fanLastCycle)*pattern.voiceB;fanLastCycle=clock.cycles;
+        const double t=std::clamp(fanBeats<=2 ? fanBeats/2 : 1-(fanBeats-2)/2,0.,1.);
+        scene.fanBloom=float(t*t*(3-2*t));
+        if(!fanReturns && fanBeats>=2){scene.fanSpread=100;cancelFan();inspector.syncControls();}
+        else if(fanBeats>=4)cancelFan();
+    }
+    if(filming)updateVideo(std::max(0.,clock.seconds-videoClockOffset),reunion);
     scene.setGrid(engine.grid());
     scene.update(clock.seconds,clock.cycles);
+    if(scene.capturePending && !scene.getLocalBounds().isEmpty()){
+        scene.capturePending=false;
+        scene.exposureStill=scene.createComponentSnapshot(scene.getLocalBounds());
+        if(scene.exposureStill.isValid())captured("Constellation captured","In memory. Choose Producer > Capture > Save exposure PNG to keep it.");
+    }
 }
 
 void MainComponent::syncTransportLabel()
