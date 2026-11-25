@@ -1,4 +1,4 @@
-#include "MainComponent.h"
+#include "../App/MainComponent.h"
 
 using namespace producerUI;
 

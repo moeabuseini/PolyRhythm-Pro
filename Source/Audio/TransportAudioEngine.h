@@ -1,7 +1,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include "Instrument.h"
-#include "BeatGrid.h"
+#include "../Rhythm/BeatGrid.h"
 
 class TransportAudioEngine final : public juce::AudioSource
 {

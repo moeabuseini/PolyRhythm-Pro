@@ -1,8 +1,8 @@
 #pragma once
 #include "GlassTheme.h"
-#include "RhythmScene.h"
+#include "../Stage/RhythmScene.h"
 #include "PerformanceSlider.h"
-#include "TransportAudioEngine.h"
+#include "../Audio/TransportAudioEngine.h"
 
 class SceneControls final : public juce::Component
 {

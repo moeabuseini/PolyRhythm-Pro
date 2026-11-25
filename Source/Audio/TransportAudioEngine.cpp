@@ -1,5 +1,5 @@
 #include "TransportAudioEngine.h"
-#include "NodeVoicing.h"
+#include "../Rhythm/NodeVoicing.h"
 #include <cmath>
 
 using namespace studio;

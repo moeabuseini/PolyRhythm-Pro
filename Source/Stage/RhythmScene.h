@@ -1,8 +1,8 @@
 #pragma once
 #include <JuceHeader.h>
-#include "Instrument.h"
-#include "BeatGrid.h"
-#include "RhythmModel.h"
+#include "../Audio/Instrument.h"
+#include "../Rhythm/BeatGrid.h"
+#include "../Rhythm/RhythmModel.h"
 
 class RhythmScene final : public juce::Component
 {

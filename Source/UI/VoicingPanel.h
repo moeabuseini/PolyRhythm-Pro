@@ -1,8 +1,8 @@
 #pragma once
 #include "GlassTheme.h"
-#include "NodeVoicing.h"
+#include "../Rhythm/NodeVoicing.h"
 #include "PerformanceSlider.h"
-#include "TransportAudioEngine.h"
+#include "../Audio/TransportAudioEngine.h"
 
 class VoicingPanel final : public juce::Component
 {

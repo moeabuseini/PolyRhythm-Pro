@@ -1,5 +1,5 @@
 #pragma once
-#include "Instrument.h"
+#include "../Audio/Instrument.h"
 #include <algorithm>
 #include <array>
 #include <cmath>

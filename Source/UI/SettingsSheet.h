@@ -1,6 +1,6 @@
 #pragma once
 #include "GlassTheme.h"
-#include "StudioSettings.h"
+#include "../Studio/StudioSettings.h"
 
 // A sheet lives inside the main window, so it also works in full screen.
 class SettingsSheet final : public juce::Component

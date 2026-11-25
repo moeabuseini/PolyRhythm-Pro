@@ -1,5 +1,5 @@
 #include "RhythmScene.h"
-#include "GlassTheme.h"
+#include "../UI/GlassTheme.h"
 #include "Landscape.h"
 #include <cmath>
 namespace

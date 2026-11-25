@@ -1,6 +1,6 @@
 #pragma once
-#include "GlassTheme.h"
-#include "StudioSettings.h"
+#include "../UI/GlassTheme.h"
+#include "../Studio/StudioSettings.h"
 
 inline StudioState videoCue(const juce::String& key,int frame,int length,double value)
 {

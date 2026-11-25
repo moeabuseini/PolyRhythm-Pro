@@ -2,13 +2,13 @@
 
 #include <JuceHeader.h>
 #include <functional>
-#include "RhythmModel.h"
-#include "LayerInspector.h"
-#include "TransportAudioEngine.h"
-#include "GlassTheme.h"
-#include "SettingsSheet.h"
-#include "VideoEditor.h"
-#include "SaveReceipt.h"
+#include "../Rhythm/RhythmModel.h"
+#include "../UI/LayerInspector.h"
+#include "../Audio/TransportAudioEngine.h"
+#include "../UI/GlassTheme.h"
+#include "../UI/SettingsSheet.h"
+#include "../Video/VideoEditor.h"
+#include "../UI/SaveReceipt.h"
 
 class MainComponent final : public juce::Component,
                             public juce::AudioSource,

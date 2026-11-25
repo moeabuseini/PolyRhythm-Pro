@@ -1,10 +1,10 @@
 #pragma once
-#include "TransportAudioEngine.h"
-#include "RhythmScene.h"
+#include "../Audio/TransportAudioEngine.h"
+#include "../Stage/RhythmScene.h"
 #include "SceneControls.h"
 #include "VoicingPanel.h"
 #include "GlassTheme.h"
-#include "ProducerPanel.h"
+#include "../Producer/ProducerPanel.h"
 
 class InspectorTab final : public juce::Button
 {
